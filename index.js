@@ -14,11 +14,15 @@ const init = async () => {
   const ctx = canvas.getContext('gpupresent');
   const textureFormat = 'bgra8unorm'; 
 
+  let width, height;
   const onResize = () => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
 
-    // call on resize to update display texture resolutions
+    // call configure on resize to update display texture resolutions
+    // some older code uses configureSwapChain(); this replaces it.
     ctx.configure({
       device,
       format: textureFormat,
@@ -45,10 +49,16 @@ const init = async () => {
   `;
 
   const testFragShader = /* wgsl */`
+    [[block]] struct Uniforms {
+      resolution: vec2<f32>;
+    };
+    // we'll bind this during the render pass using setBindGroup()
+    [[binding(0), group(0)]] var<uniform> uniforms : Uniforms;
+
     [[stage(fragment)]]
     // kind of like in GL 4.x, we can write to location 0 to set the fragment color.
     fn main([[builtin(position)]] position: vec4<f32>) -> [[location(0)]] vec4<f32> {
-      return vec4<f32>(position.rgb, 1.0);
+      return vec4<f32>(position.rg / uniforms.resolution, 0.0, 1.0);
     }
   `;
 
@@ -74,16 +84,58 @@ const init = async () => {
     }
   });
 
-  const frame = () => {
-    requestAnimationFrame(frame);
+  // create a buffer to store a uniform variable
+  const resolutionSize = 2 * 4; // two float32s
+  const resolutionBuffer = device.createBuffer({
+    // COPY_DST mode means this buffer will be the target of buffer copy operations
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    size: resolutionSize,
+  });
+  // we need to create another buffer to store the data we want to copy into the uniform buffer.
+  const uploadBuffer = device.createBuffer({
+    size: resolutionSize,
+    // this will be the source for a buffer copy, and we can map it to host memory for writing.
+    usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_WRITE,
+  });
 
-    // the texture we should render to for this frame (i.e. not the one currently being displayed)
-    const textureView = ctx.getCurrentTexture().createView();
+  const updateUniforms = async (encoder) => {
+    await uploadBuffer.mapAsync(GPUMapMode.WRITE); // map upload buffer to host memory for writing
+    new Float32Array(uploadBuffer.getMappedRange()).set([width, height]); // put data in buffer
+    uploadBuffer.unmap(); // unmap the buffer from host memory, making it accessible to the GPU.
 
+    encoder.copyBufferToBuffer(
+      uploadBuffer, // src
+      0, // offset
+      resolutionBuffer, // dst
+      0, // offset
+      resolutionSize, // length
+    );
+  };
+
+  // a bind group for making the uniform available to the render pipeline
+  const uniformBindGroup = device.createBindGroup({
+    layout: renderPipeline.getBindGroupLayout(0),
+    entries: [
+      {
+        binding: 0,
+        resource: {
+          buffer: resolutionBuffer,
+          offset: 0,
+          size: resolutionSize,
+        }
+      }
+    ]
+  });
+
+  const frame = async () => {
     // a thing that encodes a list of commands to send to the GPU.
     // you can make multiple encoders to create several "command buffers", where everything in one command
     // buffer runs concurrently, but several command buffers submitted at once will run in sequence.
     const encoder = device.createCommandEncoder();
+    await updateUniforms(encoder);
+
+    // the texture we should render to for this frame (i.e. not the one currently being displayed)
+    const textureView = ctx.getCurrentTexture().createView();
 
     // encode a render pass (as opposed to a compute pass)
     const renderEncoder = encoder.beginRenderPass({
@@ -100,6 +152,7 @@ const init = async () => {
       ]
     });
     renderEncoder.setPipeline(renderPipeline); // kind of like glUseProgram
+    renderEncoder.setBindGroup(0, uniformBindGroup);
     renderEncoder.draw(
       3, // vertex count
       1, // instance count
@@ -110,6 +163,7 @@ const init = async () => {
 
     // send command buffers to the GPU!
     device.queue.submit([encoder.finish()]);
+    requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
 };
