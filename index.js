@@ -69,7 +69,7 @@ const init = async () => {
   `;
 
   // create initial data for particles
-  const nParticles = 1000;
+  const nParticles = 10000;
   const nParticleProps = 4;
   const initialParticleData = new Float32Array(nParticles * nParticleProps);
   for (let i = 0; i < nParticles; ++i) {
@@ -175,6 +175,13 @@ const init = async () => {
     };
     [[binding(1), group(0)]] var<storage, read_write> particles : Particles;
 
+    fn rand(n: f32) -> f32 {
+      return fract(sin(n) * 43758.5453123);
+    }
+    fn randrange(n: f32, lo: f32, hi: f32) -> f32 {
+      return rand(n) * (hi - lo) + lo;
+    }
+
     [[stage(compute), workgroup_size(1)]]
     fn main([[builtin(global_invocation_id)]] globalInvocationId : vec3<u32>) {
       var index = globalInvocationId.x;
@@ -183,9 +190,13 @@ const init = async () => {
       particles.particles[index].pos = pos + vel;
       particles.particles[index].vel.y = vel.y + 0.0001;
 
-      if (abs((uniforms.counter * 10.0) % uniforms.nParticles - f32(index)) < 10.0) {
+      var n = 100.0;
+      if (abs((uniforms.counter * n) % uniforms.nParticles - f32(index)) < n) {
         particles.particles[index].pos = uniforms.mousePos / uniforms.resolution;
-        particles.particles[index].vel = vec2<f32>(0.0);
+        particles.particles[index].vel = vec2<f32>(
+          randrange(f32(index) * 2.0, -0.001, 0.001),
+          randrange(f32(index) * 2.0 + 1.0, -0.001, 0.001)
+        );
       }
     }
   `;
