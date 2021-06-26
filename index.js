@@ -9,6 +9,8 @@ const init = async () => {
 
   const canvas = document.createElement('canvas');
   document.body.appendChild(canvas);
+
+  const t0 = Date.now();
   
   // the WebGPU canvas context
   const ctx = canvas.getContext('gpupresent');
@@ -46,9 +48,13 @@ const init = async () => {
     [[block]] struct Uniforms2 {
       mousePos: vec2<f32>;
     };
+    [[block]] struct Uniforms3 {
+      time: f32;
+    };
     // we'll bind this during the render pass using setBindGroup()
     [[binding(0), group(0)]] var<uniform> uniforms1 : Uniforms1;
     [[binding(1), group(0)]] var<uniform> uniforms2 : Uniforms2;
+    [[binding(2), group(0)]] var<uniform> uniforms3 : Uniforms3;
   `;
 
   const testVertShader = /* wgsl */`
@@ -73,7 +79,7 @@ const init = async () => {
     [[stage(fragment)]]
     // kind of like in GL 4.x, we can write to location 0 to set the fragment color.
     fn main([[builtin(position)]] position: vec4<f32>) -> [[location(0)]] vec4<f32> {
-      return vec4<f32>(position.rg / uniforms1.resolution, 0.0, 1.0);
+      return vec4<f32>(position.rg / uniforms1.resolution, sin(position.x * 0.1 + uniforms3.time * 10.1), 1.0);
     }
   `;
 
@@ -135,6 +141,7 @@ const init = async () => {
 
   const resolutionUniform = createFloatUniform(2);
   const mousePosUniform = createFloatUniform(2);
+  const timeUniform = createFloatUniform(1);
 
   // a bind group for making the uniform available to the render pipeline
   const uniformBindGroup = device.createBindGroup({
@@ -155,6 +162,14 @@ const init = async () => {
           offset: 0,
           size: mousePosUniform.size,
         }
+      },
+      {
+        binding: 2,
+        resource: {
+          buffer: timeUniform.dataBuffer,
+          offset: 0,
+          size: timeUniform.size,
+        }
       }
     ]
   });
@@ -167,6 +182,7 @@ const init = async () => {
     await Promise.all([
       resolutionUniform.setData(encoder, [width, height]),
       mousePosUniform.setData(encoder, [mouseX, mouseY]),
+      timeUniform.setData(encoder, [(Date.now() - t0) / 1000]),
     ]);
 
     // the texture we should render to for this frame (i.e. not the one currently being displayed)
