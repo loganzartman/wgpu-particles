@@ -200,7 +200,10 @@ const init = async () => {
         var posB = uniforms.mousePos / uniforms.resolution;
         var randomMag = 0.0005 + 0.025 * length(posB - posA);
         var f = counterDiff / n;
-        particles.particles[index].pos = posA * (1.0 - f) + posB * f;
+        var discAngle = randrange(f32(index) * 2.0, 0.0, 6.28);
+        var discLen = randrange(f32(index) * 2.0 + 1.0, 0.0, 0.05);
+        var disc = vec2<f32>(cos(discAngle) * discLen, sin(discAngle) * discLen);
+        particles.particles[index].pos = disc + posA * (1.0 - f) + posB * f;
         particles.particles[index].vel = (posB - posA) * 0.2 + vec2<f32>(
           randrange(f32(index) * 2.0, -randomMag, randomMag),
           randrange(f32(index) * 2.0 + 1.0, -randomMag, randomMag)
