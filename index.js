@@ -63,13 +63,13 @@ const init = async () => {
     [[binding(0), group(0)]] var<uniform> uniforms : Uniforms;
   `;
 
-  const testVertShader = /* wgsl */`
+  const triangleShader = /* wgsl */`
     ${uniformsChunk}
     // "declares an entry point by specifying its pipeline stage"
     [[stage(vertex)]]
     // applying the builtin(vertex_index) attribute to an entry point parameter takes the place of the magic gl_VertexID variable.
     // likewise, the builtin(position) attribute applied to the return type is like setting gl_Position.
-    fn main([[builtin(vertex_index)]] vertexIndex : u32) -> [[builtin(position)]] vec4<f32> {
+    fn vert_main([[builtin(vertex_index)]] vertexIndex : u32) -> [[builtin(position)]] vec4<f32> {
       var pos = array<vec2<f32>, 3>(
         vec2<f32>(0.0, 0.5),
         vec2<f32>(-0.5, -0.5),
@@ -78,30 +78,24 @@ const init = async () => {
       var offset = uniforms.mousePos / uniforms.resolution * vec2<f32>(2.0, -2.0);
       return vec4<f32>(vec2<f32>(-1.0, 1.0) + pos[vertexIndex] + offset, 0.0, 1.0);
     }
-  `;
 
-  const testFragShader = /* wgsl */`
-    ${uniformsChunk}
     [[stage(fragment)]]
     // kind of like in GL 4.x, we can write to location 0 to set the fragment color.
-    fn main([[builtin(position)]] position: vec4<f32>) -> [[location(0)]] vec4<f32> {
+    fn frag_main([[builtin(position)]] position: vec4<f32>) -> [[location(0)]] vec4<f32> {
       return vec4<f32>(position.rg / uniforms.resolution, sin(position.x * 0.1 + uniforms.time * 10.1), 1.0);
     }
   `;
+  const triangleModule = device.createShaderModule({code: triangleShader});
 
   // this is akin to a WebGL shader program; i.e. configures shaders for several GPU shader stages
   const renderPipeline = device.createRenderPipeline({
     vertex: {
-      module: device.createShaderModule({
-        code: testVertShader,
-      }),
-      entryPoint: 'main',
+      module: triangleModule,
+      entryPoint: 'vert_main',
     },
     fragment: {
-      module: device.createShaderModule({
-        code: testFragShader,
-      }),
-      entryPoint: 'main',
+      module: triangleModule,
+      entryPoint: 'frag_main',
       // ?
       targets: [{format: textureFormat}],
     },
