@@ -22,10 +22,12 @@ const init = async () => {
 
   let width, height;
   const onResize = () => {
-    width = window.innerWidth;
-    height = window.innerHeight;
+    width = Math.ceil(window.innerWidth * window.devicePixelRatio);
+    height = Math.ceil(window.innerHeight * window.devicePixelRatio);
     canvas.width = width;
     canvas.height = height;
+    canvas.style.width = `${window.innerWidth}px`;
+    canvas.style.height = `${window.innerHeight}px`;
 
     // call configure on resize to update display texture resolutions
     // some older code uses configureSwapChain(); this replaces it.
@@ -42,8 +44,8 @@ const init = async () => {
   let mouseX = 0, mouseY = 0;
   let mousePx = 0, mousePy = 0;
   window.addEventListener('pointermove', (event) => {
-    mouseX = event.clientX;
-    mouseY = event.clientY;
+    mouseX = event.clientX * window.devicePixelRatio;
+    mouseY = event.clientY * window.devicePixelRatio;
   }, false);
 
   const uniforms = utils.createUniforms(
