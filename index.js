@@ -74,8 +74,8 @@ const init = async () => {
     const offset = i * nParticleProps;
     initialParticleData[offset + 0] = Math.random(); // x
     initialParticleData[offset + 1] = Math.random(); // y
-    initialParticleData[offset + 2] = Math.random(); // dx
-    initialParticleData[offset + 3] = Math.random(); // dy
+    initialParticleData[offset + 2] = Math.random() * 0.001; // dx
+    initialParticleData[offset + 3] = -Math.random() * 0.005; // dy
   }
   // create particle data storage buffer and load initial data
   const particlesBuffer = device.createBuffer({
@@ -128,6 +128,7 @@ const init = async () => {
       module: triangleModule,
       entryPoint: 'vert_main',
       buffers: [
+        // configure attributes derived from first vertex buffer
         {
           // instanced particles
           arrayStride: nParticleProps * 4,
@@ -161,8 +162,38 @@ const init = async () => {
     }
   });
 
+  const updateParticlesShader = /* wgsl */`
+    ${uniformsChunk}
+    struct Particle {
+      pos : vec2<f32>;
+      vel : vec2<f32>;
+    };
+    [[block]] struct Particles {
+      particles : [[stride(16)]] array<Particle>;
+    };
+    [[binding(1), group(0)]] var<storage, read_write> particles : Particles;
+
+    [[stage(compute), workgroup_size(1)]]
+    fn main([[builtin(global_invocation_id)]] globalInvocationId : vec3<u32>) {
+      var index = globalInvocationId.x;
+      var pos = particles.particles[index].pos;
+      var vel = particles.particles[index].vel;
+      particles.particles[index].pos = pos + vel;
+      particles.particles[index].vel.y = vel.y + 0.0001;
+    }
+  `;
+  const updateParticlesModule = device.createShaderModule({code: updateParticlesShader});
+
+  const updateParticlesPipeline = device.createComputePipeline({
+    compute: {
+      module: updateParticlesModule,
+      entryPoint: 'main',
+    },
+  });
+
   // a bind group for making the buffers available to the render pipeline
-  const uniformBindGroup = device.createBindGroup({
+  // this is for things that are [[block]]s, not things that are attributes.
+  const renderBindGroup = device.createBindGroup({
     layout: renderPipeline.getBindGroupLayout(0),
     entries: [
       {
@@ -171,6 +202,27 @@ const init = async () => {
           buffer: uniforms.dataBuffer,
           offset: 0,
           size: uniforms.totalSize,
+        }
+      },
+    ]
+  });
+  const updateParticlesBindGroup = device.createBindGroup({
+    layout: updateParticlesPipeline.getBindGroupLayout(0),
+    entries: [
+      {
+        binding: 0,
+        resource: {
+          buffer: uniforms.dataBuffer,
+          offset: 0,
+          size: uniforms.totalSize,
+        }
+      },
+      {
+        binding: 1,
+        resource: {
+          buffer: particlesBuffer,
+          offset: 0,
+          size: initialParticleData.byteLength,
         }
       },
     ]
@@ -206,7 +258,7 @@ const init = async () => {
       ]
     });
     renderEncoder.setPipeline(renderPipeline); // kind of like glUseProgram
-    renderEncoder.setBindGroup(0, uniformBindGroup);
+    renderEncoder.setBindGroup(0, renderBindGroup);
     renderEncoder.setVertexBuffer(0, particlesBuffer);
     renderEncoder.draw(
       3, // vertex count
@@ -215,6 +267,12 @@ const init = async () => {
       0, // first instance
     ); // just like glDrawArrays!
     renderEncoder.endPass();
+
+    const computeEncoder = encoder.beginComputePass();
+    computeEncoder.setPipeline(updateParticlesPipeline);
+    computeEncoder.setBindGroup(0, updateParticlesBindGroup);
+    computeEncoder.dispatch(nParticles);
+    computeEncoder.endPass();
 
     // send command buffers to the GPU!
     device.queue.submit([encoder.finish()]);
