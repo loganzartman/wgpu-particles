@@ -51,6 +51,7 @@ const init = async () => {
       mousePos: {length: 2},
       time: {length: 1},
       counter: {length: 1},
+      nParticles: {length: 1},
     }, 
     {ArrayType: Float32Array},
   );
@@ -61,6 +62,7 @@ const init = async () => {
       mousePos: vec2<f32>;
       time: f32;
       counter: f32;
+      nParticles: f32;
     };
     // we'll bind this during the render pass using setBindGroup()
     [[binding(0), group(0)]] var<uniform> uniforms : Uniforms;
@@ -180,6 +182,11 @@ const init = async () => {
       var vel = particles.particles[index].vel;
       particles.particles[index].pos = pos + vel;
       particles.particles[index].vel.y = vel.y + 0.0001;
+
+      if (abs((uniforms.counter * 10.0) % uniforms.nParticles - f32(index)) < 10.0) {
+        particles.particles[index].pos = uniforms.mousePos / uniforms.resolution;
+        particles.particles[index].vel = vec2<f32>(0.0);
+      }
     }
   `;
   const updateParticlesModule = device.createShaderModule({code: updateParticlesShader});
@@ -238,6 +245,7 @@ const init = async () => {
       mousePos: [mouseX, mouseY],
       time: [(Date.now() - t0) / 1000],
       counter: [++counter],
+      nParticles: [nParticles],
     });
 
     // the texture we should render to for this frame (i.e. not the one currently being displayed)
