@@ -40,6 +40,7 @@ const init = async () => {
   window.addEventListener('resize', onResize, false);
 
   let mouseX = 0, mouseY = 0;
+  let mousePx = 0, mousePy = 0;
   window.addEventListener('pointermove', (event) => {
     mouseX = event.clientX;
     mouseY = event.clientY;
@@ -49,6 +50,7 @@ const init = async () => {
     {
       resolution: {length: 2},
       mousePos: {length: 2},
+      mousePrevPos: {length: 2},
       time: {length: 1},
       counter: {length: 1},
       nParticles: {length: 1},
@@ -60,6 +62,7 @@ const init = async () => {
     [[block]] struct Uniforms {
       resolution: vec2<f32>;
       mousePos: vec2<f32>;
+      mousePrevPos: vec2<f32>;
       time: f32;
       counter: f32;
       nParticles: f32;
@@ -69,7 +72,7 @@ const init = async () => {
   `;
 
   // create initial data for particles
-  const nParticles = 10000;
+  const nParticles = 100000;
   const nParticleProps = 4;
   const initialParticleData = new Float32Array(nParticles * nParticleProps);
   for (let i = 0; i < nParticles; ++i) {
@@ -100,7 +103,7 @@ const init = async () => {
       [[builtin(vertex_index)]] vertexIndex : u32,
       [[builtin(instance_index)]] instanceIndex: u32,
     ) -> [[builtin(position)]] vec4<f32> {
-      var scale = f32(0.01);
+      var scale = vec2<f32>(0.01, 0.01);
       var vertexCoords = array<vec2<f32>, 3>(
         vec2<f32>(0.0, 0.5),
         vec2<f32>(-0.5, -0.5),
@@ -110,16 +113,16 @@ const init = async () => {
       var center = particlePos * vec2<f32>(2.0, -2.0);
       var angle = atan2(particleVel.y, particleVel.x);
       var pos = vec2<f32>(
-        (vertex.x * cos(angle)) - (vertex.y * sin(angle)),
-        (vertex.x * sin(angle)) + (vertex.y * cos(angle))
+        (vertex.x * scale.x * cos(angle)) - (vertex.y * scale.y * sin(angle)),
+        (vertex.x * scale.x * sin(angle)) + (vertex.y * scale.y * cos(angle))
       );
-      return vec4<f32>(vec2<f32>(-1.0, 1.0) + center + pos * scale, 0.0, 1.0);
+      return vec4<f32>(vec2<f32>(-1.0, 1.0) + center + pos, 0.0, 1.0);
     }
 
     [[stage(fragment)]]
     // kind of like in GL 4.x, we can write to location 0 to set the fragment color.
     fn frag_main([[builtin(position)]] position: vec4<f32>) -> [[location(0)]] vec4<f32> {
-      return vec4<f32>(position.rg / uniforms.resolution, sin(position.x * 0.1 + uniforms.time * 10.1), 1.0);
+      return vec4<f32>(position.rg / uniforms.resolution, 0.5, 1.0);
     }
   `;
   const triangleModule = device.createShaderModule({code: triangleShader});
@@ -191,11 +194,16 @@ const init = async () => {
       particles.particles[index].vel.y = vel.y + 0.0001;
 
       var n = 100.0;
-      if (abs((uniforms.counter * n) % uniforms.nParticles - f32(index)) < n) {
-        particles.particles[index].pos = uniforms.mousePos / uniforms.resolution;
-        particles.particles[index].vel = vec2<f32>(
-          randrange(f32(index) * 2.0, -0.001, 0.001),
-          randrange(f32(index) * 2.0 + 1.0, -0.001, 0.001)
+      var counterDiff = f32(index) - (uniforms.counter * n) % uniforms.nParticles;
+      if (0.0 < counterDiff && counterDiff < n) {
+        var posA = uniforms.mousePrevPos / uniforms.resolution;
+        var posB = uniforms.mousePos / uniforms.resolution;
+        var randomMag = 0.0005 + 0.025 * length(posB - posA);
+        var f = counterDiff / n;
+        particles.particles[index].pos = posA * (1.0 - f) + posB * f;
+        particles.particles[index].vel = (posB - posA) * 0.2 + vec2<f32>(
+          randrange(f32(index) * 2.0, -randomMag, randomMag),
+          randrange(f32(index) * 2.0 + 1.0, -randomMag, randomMag)
         );
       }
     }
@@ -254,10 +262,13 @@ const init = async () => {
     await uniforms.setData({
       resolution: [width, height],
       mousePos: [mouseX, mouseY],
+      mousePrevPos: [mousePx, mousePy],
       time: [(Date.now() - t0) / 1000],
       counter: [++counter],
       nParticles: [nParticles],
     });
+    mousePx = mouseX;
+    mousePy = mouseY;
 
     // the texture we should render to for this frame (i.e. not the one currently being displayed)
     const textureView = ctx.getCurrentTexture().createView();
