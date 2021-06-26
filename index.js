@@ -72,7 +72,7 @@ const init = async () => {
   `;
 
   // create initial data for particles
-  const nParticles = 100000;
+  const nParticles = 50000;
   const nParticleProps = 4;
   const initialParticleData = new Float32Array(nParticles * nParticleProps);
   for (let i = 0; i < nParticles; ++i) {
@@ -103,15 +103,15 @@ const init = async () => {
       [[builtin(vertex_index)]] vertexIndex : u32,
       [[builtin(instance_index)]] instanceIndex: u32,
     ) -> [[builtin(position)]] vec4<f32> {
-      var scale = vec2<f32>(0.01, 0.01);
+      var scale = vec2<f32>(0.01, length(particleVel) * 10.0);
       var vertexCoords = array<vec2<f32>, 3>(
-        vec2<f32>(0.0, 0.5),
-        vec2<f32>(-0.5, -0.5),
-        vec2<f32>(0.5, -0.5)
+        vec2<f32>(0.0, -0.5),
+        vec2<f32>(0.5, 0.5),
+        vec2<f32>(-0.5, 0.5)
       );
       var vertex = vertexCoords[vertexIndex];
       var center = particlePos * vec2<f32>(2.0, -2.0);
-      var angle = atan2(particleVel.y, particleVel.x);
+      var angle = atan2(particleVel.x, particleVel.y);
       var pos = vec2<f32>(
         (vertex.x * scale.x * cos(angle)) - (vertex.y * scale.y * sin(angle)),
         (vertex.x * scale.x * sin(angle)) + (vertex.y * scale.y * cos(angle))
