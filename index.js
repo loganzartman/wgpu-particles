@@ -93,16 +93,29 @@ const init = async () => {
 
   const triangleShader = /* wgsl */`
     ${uniformsChunk}
+
+    fn hsv2rgb(c: vec3<f32>) -> vec3<f32> {
+      var K = vec4<f32>(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+      var p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+      return c.z * mix(K.xxx, clamp(p - K.xxx, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(c.y));
+    }
+
+    struct VertexOutput {
+      [[builtin(position)]] position : vec4<f32>;
+      // like in GL, stage outputs/inputs only need to be defined in the shader
+      [[location(0)]] color : vec4<f32>;
+    };
+
     // "declares an entry point by specifying its pipeline stage"
     [[stage(vertex)]]
     // applying the builtin(vertex_index) attribute to an entry point parameter takes the place of the magic gl_VertexID variable.
     // likewise, the builtin(position) attribute applied to the return type is like setting gl_Position.
     fn vert_main(
-      [[location(0)]] particlePos: vec2<f32>,
-      [[location(1)]] particleVel: vec2<f32>,
       [[builtin(vertex_index)]] vertexIndex : u32,
       [[builtin(instance_index)]] instanceIndex: u32,
-    ) -> [[builtin(position)]] vec4<f32> {
+      [[location(0)]] particlePos: vec2<f32>,
+      [[location(1)]] particleVel: vec2<f32>,
+    ) -> VertexOutput {
       var scale = vec2<f32>(0.01, length(particleVel) * 10.0);
       var vertexCoords = array<vec2<f32>, 3>(
         vec2<f32>(0.0, -0.5),
@@ -116,13 +129,18 @@ const init = async () => {
         (vertex.x * scale.x * cos(angle)) - (vertex.y * scale.y * sin(angle)),
         (vertex.x * scale.x * sin(angle)) + (vertex.y * scale.y * cos(angle))
       );
-      return vec4<f32>(vec2<f32>(-1.0, 1.0) + center + pos, 0.0, 1.0);
+      var output : VertexOutput;
+      output.position = vec4<f32>(vec2<f32>(-1.0, 1.0) + center + pos, 0.0, 1.0);
+      output.color = vec4<f32>(hsv2rgb(vec3<f32>(f32(instanceIndex) / uniforms.nParticles, 0.5, 0.5)), 1.0);
+      return output;
     }
 
     [[stage(fragment)]]
     // kind of like in GL 4.x, we can write to location 0 to set the fragment color.
-    fn frag_main([[builtin(position)]] position: vec4<f32>) -> [[location(0)]] vec4<f32> {
-      return vec4<f32>(position.rg / uniforms.resolution, 0.5, 1.0);
+    fn frag_main(
+      [[location(0)]] color : vec4<f32>,
+    ) -> [[location(0)]] vec4<f32> {
+      return color;
     }
   `;
   const triangleModule = device.createShaderModule({code: triangleShader});
