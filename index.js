@@ -14,6 +14,7 @@ const init = async () => {
   document.body.appendChild(canvas);
 
   const t0 = Date.now();
+  let counter = 0;
   
   // the WebGPU canvas context
   const ctx = canvas.getContext('gpupresent');
@@ -49,6 +50,7 @@ const init = async () => {
       resolution: {length: 2},
       mousePos: {length: 2},
       time: {length: 1},
+      counter: {length: 1},
     }, 
     {ArrayType: Float32Array},
   );
@@ -58,10 +60,31 @@ const init = async () => {
       resolution: vec2<f32>;
       mousePos: vec2<f32>;
       time: f32;
+      counter: f32;
     };
     // we'll bind this during the render pass using setBindGroup()
     [[binding(0), group(0)]] var<uniform> uniforms : Uniforms;
   `;
+
+  // create initial data for particles
+  const nParticles = 1000;
+  const nParticleProps = 4;
+  const initialParticleData = new Float32Array(nParticles * nParticleProps);
+  for (let i = 0; i < nParticles; ++i) {
+    const offset = i * nParticleProps;
+    initialParticleData[offset + 0] = Math.random(); // x
+    initialParticleData[offset + 1] = Math.random(); // y
+    initialParticleData[offset + 2] = Math.random(); // dx
+    initialParticleData[offset + 3] = Math.random(); // dy
+  }
+  // create particle data storage buffer and load initial data
+  const particlesBuffer = device.createBuffer({
+    size: initialParticleData.byteLength,
+    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE,
+    mappedAtCreation: true,
+  });
+  new Float32Array(particlesBuffer.getMappedRange()).set(initialParticleData);
+  particlesBuffer.unmap();
 
   const triangleShader = /* wgsl */`
     ${uniformsChunk}
@@ -69,14 +92,26 @@ const init = async () => {
     [[stage(vertex)]]
     // applying the builtin(vertex_index) attribute to an entry point parameter takes the place of the magic gl_VertexID variable.
     // likewise, the builtin(position) attribute applied to the return type is like setting gl_Position.
-    fn vert_main([[builtin(vertex_index)]] vertexIndex : u32) -> [[builtin(position)]] vec4<f32> {
-      var pos = array<vec2<f32>, 3>(
+    fn vert_main(
+      [[location(0)]] particlePos: vec2<f32>,
+      [[location(1)]] particleVel: vec2<f32>,
+      [[builtin(vertex_index)]] vertexIndex : u32,
+      [[builtin(instance_index)]] instanceIndex: u32,
+    ) -> [[builtin(position)]] vec4<f32> {
+      var scale = f32(0.01);
+      var vertexCoords = array<vec2<f32>, 3>(
         vec2<f32>(0.0, 0.5),
         vec2<f32>(-0.5, -0.5),
         vec2<f32>(0.5, -0.5)
       );
-      var offset = uniforms.mousePos / uniforms.resolution * vec2<f32>(2.0, -2.0);
-      return vec4<f32>(vec2<f32>(-1.0, 1.0) + pos[vertexIndex] + offset, 0.0, 1.0);
+      var vertex = vertexCoords[vertexIndex];
+      var center = particlePos * vec2<f32>(2.0, -2.0);
+      var angle = atan2(particleVel.y, particleVel.x);
+      var pos = vec2<f32>(
+        (vertex.x * cos(angle)) - (vertex.y * sin(angle)),
+        (vertex.x * sin(angle)) + (vertex.y * cos(angle))
+      );
+      return vec4<f32>(vec2<f32>(-1.0, 1.0) + center + pos * scale, 0.0, 1.0);
     }
 
     [[stage(fragment)]]
@@ -92,6 +127,27 @@ const init = async () => {
     vertex: {
       module: triangleModule,
       entryPoint: 'vert_main',
+      buffers: [
+        {
+          // instanced particles
+          arrayStride: nParticleProps * 4,
+          stepMode: 'instance',
+          attributes: [
+            {
+              // x, y
+              shaderLocation: 0,
+              offset: 0,
+              format: 'float32x2',
+            },
+            {
+              // dx, dy
+              shaderLocation: 1,
+              offset: 2 * 4,
+              format: 'float32x2',
+            },
+          ],
+        },
+      ],
     },
     fragment: {
       module: triangleModule,
@@ -105,7 +161,7 @@ const init = async () => {
     }
   });
 
-  // a bind group for making the uniform available to the render pipeline
+  // a bind group for making the buffers available to the render pipeline
   const uniformBindGroup = device.createBindGroup({
     layout: renderPipeline.getBindGroupLayout(0),
     entries: [
@@ -129,6 +185,7 @@ const init = async () => {
       resolution: [width, height],
       mousePos: [mouseX, mouseY],
       time: [(Date.now() - t0) / 1000],
+      counter: [++counter],
     });
 
     // the texture we should render to for this frame (i.e. not the one currently being displayed)
@@ -150,9 +207,10 @@ const init = async () => {
     });
     renderEncoder.setPipeline(renderPipeline); // kind of like glUseProgram
     renderEncoder.setBindGroup(0, uniformBindGroup);
+    renderEncoder.setVertexBuffer(0, particlesBuffer);
     renderEncoder.draw(
       3, // vertex count
-      1, // instance count
+      nParticles, // instance count
       0, // first vertex
       0, // first instance
     ); // just like glDrawArrays!
