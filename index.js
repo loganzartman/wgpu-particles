@@ -71,8 +71,23 @@ const init = async () => {
     [[binding(0), group(0)]] var<uniform> uniforms : Uniforms;
   `;
 
+  const utilChunk = /* wgsl */`
+    fn hsv2rgb(c: vec3<f32>) -> vec3<f32> {
+      var K = vec4<f32>(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+      var p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+      return c.z * mix(K.xxx, clamp(p - K.xxx, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(c.y));
+    }
+
+    fn rand(n: f32) -> f32 {
+      return fract(sin(n) * 43758.5453123);
+    }
+    fn randrange(n: f32, lo: f32, hi: f32) -> f32 {
+      return rand(n) * (hi - lo) + lo;
+    }
+  `;
+
   // create initial data for particles
-  const nParticles = 50000;
+  const nParticles = 100000;
   const nParticleProps = 4;
   const initialParticleData = new Float32Array(nParticles * nParticleProps);
   for (let i = 0; i < nParticles; ++i) {
@@ -93,12 +108,7 @@ const init = async () => {
 
   const triangleShader = /* wgsl */`
     ${uniformsChunk}
-
-    fn hsv2rgb(c: vec3<f32>) -> vec3<f32> {
-      var K = vec4<f32>(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-      var p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
-      return c.z * mix(K.xxx, clamp(p - K.xxx, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(c.y));
-    }
+    ${utilChunk}
 
     struct VertexOutput {
       [[builtin(position)]] position : vec4<f32>;
@@ -116,7 +126,7 @@ const init = async () => {
       [[location(0)]] particlePos: vec2<f32>,
       [[location(1)]] particleVel: vec2<f32>,
     ) -> VertexOutput {
-      var scale = vec2<f32>(0.01, length(particleVel) * 10.0);
+      var scale = vec2<f32>(0.0025, length(particleVel) * 5.0);
       var vertexCoords = array<vec2<f32>, 3>(
         vec2<f32>(0.0, -0.5),
         vec2<f32>(0.5, 0.5),
@@ -131,7 +141,7 @@ const init = async () => {
       );
       var output : VertexOutput;
       output.position = vec4<f32>(vec2<f32>(-1.0, 1.0) + center + pos, 0.0, 1.0);
-      output.color = vec4<f32>(hsv2rgb(vec3<f32>(f32(instanceIndex) / uniforms.nParticles, 0.5, 0.5)), 1.0);
+      output.color = vec4<f32>(hsv2rgb(vec3<f32>(f32(instanceIndex) / uniforms.nParticles, randrange(f32(instanceIndex), 0.3, 0.7), 0.5)), 1.0);
       return output;
     }
 
@@ -187,6 +197,8 @@ const init = async () => {
 
   const updateParticlesShader = /* wgsl */`
     ${uniformsChunk}
+    ${utilChunk}
+
     struct Particle {
       pos : vec2<f32>;
       vel : vec2<f32>;
@@ -196,27 +208,20 @@ const init = async () => {
     };
     [[binding(1), group(0)]] var<storage, read_write> particles : Particles;
 
-    fn rand(n: f32) -> f32 {
-      return fract(sin(n) * 43758.5453123);
-    }
-    fn randrange(n: f32, lo: f32, hi: f32) -> f32 {
-      return rand(n) * (hi - lo) + lo;
-    }
-
     [[stage(compute), workgroup_size(1)]]
     fn main([[builtin(global_invocation_id)]] globalInvocationId : vec3<u32>) {
       var index = globalInvocationId.x;
       var pos = particles.particles[index].pos;
       var vel = particles.particles[index].vel;
       particles.particles[index].pos = pos + vel;
-      particles.particles[index].vel.y = vel.y + 0.0001;
+      particles.particles[index].vel.y = vel.y + 0.0005;
 
-      var n = 100.0;
+      var n = 1000.0;
       var counterDiff = f32(index) - (uniforms.counter * n) % uniforms.nParticles;
       if (0.0 < counterDiff && counterDiff < n) {
         var posA = uniforms.mousePrevPos / uniforms.resolution;
         var posB = uniforms.mousePos / uniforms.resolution;
-        var randomMag = 0.0005 + 0.025 * length(posB - posA);
+        var randomMag = 0.0005 + 0.04 * length(posB - posA);
         var f = counterDiff / n;
         var discAngle = randrange(f32(index) * 2.0, 0.0, 6.28);
         var discLen = randrange(f32(index) * 2.0 + 1.0, 0.0, 0.05);
