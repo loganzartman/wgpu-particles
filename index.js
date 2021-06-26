@@ -225,13 +225,13 @@ const init = async () => {
         var posB = uniforms.mousePos / uniforms.resolution;
         var randomMag = 0.0005 + 0.04 * length(posB - posA);
         var f = counterDiff / n;
-        var discAngle = randrange(f32(index) * 2.0, 0.0, 6.28);
-        var discLen = randrange(f32(index) * 2.0 + 1.0, 0.0, 0.05);
+        var discAngle = randrange(f32(index) * 0.71873, 0.0, 6.28);
+        var discLen = randrange(f32(index) * 3.19888, 0.0, 0.05);
         var disc = vec2<f32>(cos(discAngle) * discLen, sin(discAngle) * discLen);
         particles.particles[index].pos = disc + posA * (1.0 - f) + posB * f;
         particles.particles[index].vel = (posB - posA) * 0.2 + vec2<f32>(
-          randrange(f32(index) * 2.0, -randomMag, randomMag),
-          randrange(f32(index) * 2.0 + 1.0, -randomMag, randomMag)
+          randrange(f32(index) * 2.135708, -randomMag, randomMag),
+          randrange(f32(index) * 1.198923, -randomMag, randomMag)
         );
       }
     }
