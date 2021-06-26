@@ -1,3 +1,5 @@
+import getUtils from './util.js';
+
 const init = async () => {
   if (!navigator.gpu) {
     alert('webgpu not supported');
@@ -6,6 +8,7 @@ const init = async () => {
 
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice();
+  const utils = getUtils({device});
 
   const canvas = document.createElement('canvas');
   document.body.appendChild(canvas);
@@ -41,20 +44,23 @@ const init = async () => {
     mouseY = event.clientY;
   }, false);
 
+  const uniforms = utils.createUniforms(
+    {
+      resolution: {length: 2},
+      mousePos: {length: 2},
+      time: {length: 1},
+    }, 
+    {ArrayType: Float32Array},
+  );
+
   const uniformsChunk = /* wgsl */`
-    [[block]] struct Uniforms1 {
+    [[block]] struct Uniforms {
       resolution: vec2<f32>;
-    };
-    [[block]] struct Uniforms2 {
       mousePos: vec2<f32>;
-    };
-    [[block]] struct Uniforms3 {
       time: f32;
     };
     // we'll bind this during the render pass using setBindGroup()
-    [[binding(0), group(0)]] var<uniform> uniforms1 : Uniforms1;
-    [[binding(1), group(0)]] var<uniform> uniforms2 : Uniforms2;
-    [[binding(2), group(0)]] var<uniform> uniforms3 : Uniforms3;
+    [[binding(0), group(0)]] var<uniform> uniforms : Uniforms;
   `;
 
   const testVertShader = /* wgsl */`
@@ -69,7 +75,7 @@ const init = async () => {
         vec2<f32>(-0.5, -0.5),
         vec2<f32>(0.5, -0.5)
       );
-      var offset = uniforms2.mousePos / uniforms1.resolution * vec2<f32>(2.0, -2.0);
+      var offset = uniforms.mousePos / uniforms.resolution * vec2<f32>(2.0, -2.0);
       return vec4<f32>(vec2<f32>(-1.0, 1.0) + pos[vertexIndex] + offset, 0.0, 1.0);
     }
   `;
@@ -79,7 +85,7 @@ const init = async () => {
     [[stage(fragment)]]
     // kind of like in GL 4.x, we can write to location 0 to set the fragment color.
     fn main([[builtin(position)]] position: vec4<f32>) -> [[location(0)]] vec4<f32> {
-      return vec4<f32>(position.rg / uniforms1.resolution, sin(position.x * 0.1 + uniforms3.time * 10.1), 1.0);
+      return vec4<f32>(position.rg / uniforms.resolution, sin(position.x * 0.1 + uniforms.time * 10.1), 1.0);
     }
   `;
 
@@ -105,44 +111,6 @@ const init = async () => {
     }
   });
 
-  const createFloatUniform = (length) => {
-    const size = length * 4;
-    const dataBuffer = device.createBuffer({
-      // COPY_DST mode means this buffer will be the target of buffer copy operations
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      size, // in bytes
-    });
-
-    // we need to create another buffer to store the data we want to copy into the uniform buffer.
-    const uploadBuffer = device.createBuffer({
-      size,
-      // this will be the source for a buffer copy, and we can map it to host memory for writing.
-      usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_WRITE,
-    });
-
-    const setData = async (encoder, data) => {
-      // map upload buffer to host memory for writing
-      await uploadBuffer.mapAsync(GPUMapMode.WRITE); 
-      // put data in buffer
-      new Float32Array(uploadBuffer.getMappedRange()).set(data); 
-      // unmap the buffer from host memory, making it accessible to the GPU.
-      uploadBuffer.unmap(); 
-
-      encoder.copyBufferToBuffer(
-        uploadBuffer, // src
-        0, // offset
-        dataBuffer, // dst
-        0, // offset
-        size, // length
-      );
-    };
-    return {size, dataBuffer, uploadBuffer, setData};
-  };
-
-  const resolutionUniform = createFloatUniform(2);
-  const mousePosUniform = createFloatUniform(2);
-  const timeUniform = createFloatUniform(1);
-
   // a bind group for making the uniform available to the render pipeline
   const uniformBindGroup = device.createBindGroup({
     layout: renderPipeline.getBindGroupLayout(0),
@@ -150,27 +118,11 @@ const init = async () => {
       {
         binding: 0,
         resource: {
-          buffer: resolutionUniform.dataBuffer,
+          buffer: uniforms.dataBuffer,
           offset: 0,
-          size: resolutionUniform.size,
+          size: uniforms.totalSize,
         }
       },
-      {
-        binding: 1,
-        resource: {
-          buffer: mousePosUniform.dataBuffer,
-          offset: 0,
-          size: mousePosUniform.size,
-        }
-      },
-      {
-        binding: 2,
-        resource: {
-          buffer: timeUniform.dataBuffer,
-          offset: 0,
-          size: timeUniform.size,
-        }
-      }
     ]
   });
 
@@ -179,11 +131,11 @@ const init = async () => {
     // you can make multiple encoders to create several "command buffers", where everything in one command
     // buffer runs concurrently, but several command buffers submitted at once will run in sequence.
     const encoder = device.createCommandEncoder();
-    await Promise.all([
-      resolutionUniform.setData(encoder, [width, height]),
-      mousePosUniform.setData(encoder, [mouseX, mouseY]),
-      timeUniform.setData(encoder, [(Date.now() - t0) / 1000]),
-    ]);
+    await uniforms.setData({
+      resolution: [width, height],
+      mousePos: [mouseX, mouseY],
+      time: [(Date.now() - t0) / 1000],
+    });
 
     // the texture we should render to for this frame (i.e. not the one currently being displayed)
     const textureView = ctx.getCurrentTexture().createView();
