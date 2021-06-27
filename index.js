@@ -86,10 +86,57 @@ const init = async () => {
     fn randrange(n: f32, lo: f32, hi: f32) -> f32 {
       return rand(n) * (hi - lo) + lo;
     }
+
+    // adapted from nimitz from inigo quilez
+    // https://www.shadertoy.com/view/Xt3cDn
+    fn hashInt(x: vec2<i32>) -> u32 {
+      var p = vec2<u32>(x); // reinterpret cast
+      p = vec2<u32>(1103515245u) * ((p >> vec2<u32>(1u)) ^ (p.yx));
+      let h32 = 1103515245u * ((p.x) ^ (p.y >> 3u));
+      return h32 ^ (h32 >> 16u);
+    }
+
+    fn hash2(x: vec2<i32>) -> f32 {
+      let n = hashInt(x);
+      return f32(n) * (1.0 / f32(0xffffffffu));
+    }
+
+    // adapted from inigo quilez
+    // https://www.shadertoy.com/view/XlXcW4
+    let kHash = 1103515245u;  // GLIB C
+    fn hash3(input: vec3<i32>) -> vec3<f32> {
+      var x = vec3<u32>(input); // reinterpret cast
+      x = ((x >> vec3<u32>(8u)) ^ x.yzx) * kHash;
+      x = ((x >> vec3<u32>(8u)) ^ x.yzx) * kHash;
+      x = ((x >> vec3<u32>(8u)) ^ x.yzx) * kHash;
+      return vec3<f32>(x) * (1.0 / f32(0xffffffffu));
+    }
+
+    // adapted from ken perlin
+    fn quintic(x: f32) -> f32 {
+      return x * x * x * (x * (x * 6.0 - 15.0) + 10.0);
+    }
+
+    // 3D gradient noise adapted from inigo quilez
+    // https://www.shadertoy.com/view/XdXGW8
+    fn noise(p: vec3<f32>) -> f32 {
+      let i = vec3<i32>(floor(p));
+      let f = fract(p);
+      let u = vec3<f32>(quintic(f.x), quintic(f.y), quintic(f.z));
+
+      return mix(mix(mix(dot(hash3(i + vec3<i32>(0, 0, 0)), f - vec3<f32>(0.0, 0.0, 0.0)), 
+                         dot(hash3(i + vec3<i32>(1, 0, 0)), f - vec3<f32>(1.0, 0.0, 0.0)), u.x),
+                     mix(dot(hash3(i + vec3<i32>(0, 1, 0)), f - vec3<f32>(0.0, 1.0, 0.0)), 
+                         dot(hash3(i + vec3<i32>(1, 1, 0)), f - vec3<f32>(1.0, 1.0, 0.0)), u.x), u.y),
+                 mix(mix(dot(hash3(i + vec3<i32>(0, 0, 1)), f - vec3<f32>(0.0, 0.0, 1.0)), 
+                         dot(hash3(i + vec3<i32>(1, 0, 1)), f - vec3<f32>(1.0, 0.0, 1.0)), u.x),
+                     mix(dot(hash3(i + vec3<i32>(0, 1, 1)), f - vec3<f32>(0.0, 1.0, 1.0)), 
+                         dot(hash3(i + vec3<i32>(1, 1, 1)), f - vec3<f32>(1.0, 1.0, 1.0)), u.x), u.y), u.z);
+    }
   `;
 
   // create initial data for particles
-  const nParticles = 100000;
+  const nParticles = 500000;
   const nParticleProps = 4;
   const initialParticleData = new Float32Array(nParticles * nParticleProps);
   for (let i = 0; i < nParticles; ++i) {
@@ -213,12 +260,21 @@ const init = async () => {
     [[stage(compute), workgroup_size(1)]]
     fn main([[builtin(global_invocation_id)]] globalInvocationId : vec3<u32>) {
       var index = globalInvocationId.x;
+      // physics integration
       var pos = particles.particles[index].pos;
       var vel = particles.particles[index].vel;
-      particles.particles[index].pos = pos + vel;
-      particles.particles[index].vel.y = vel.y + 0.0005;
+      pos = pos + vel;
+      vel.y = vel.y + 0.0005;
 
-      var n = 1000.0;
+      // wind
+      let windX = noise(vec3<f32>(pos * 1.19012, uniforms.time * 0.2)) 
+                + noise(vec3<f32>(pos * 2.3589, uniforms.time * 0.5)) * 0.5;
+      let windY = noise(vec3<f32>(pos * 1.19012, uniforms.time * 0.2 + 221.298)) 
+                + noise(vec3<f32>(pos * 2.3589, uniforms.time * 0.5 + 121.99)) * 0.5;
+      vel = vel + vec2<f32>(windX, windY) * 0.005;
+
+      // mouse interaction
+      var n = 2500.0;
       var counterDiff = f32(index) - (uniforms.counter * n) % uniforms.nParticles;
       if (0.0 < counterDiff && counterDiff < n) {
         var posA = uniforms.mousePrevPos / uniforms.resolution;
@@ -228,12 +284,16 @@ const init = async () => {
         var discAngle = randrange(f32(index) * 0.71873, 0.0, 6.28);
         var discLen = randrange(f32(index) * 3.19888, 0.0, 0.05);
         var disc = vec2<f32>(cos(discAngle) * discLen, sin(discAngle) * discLen);
-        particles.particles[index].pos = disc + posA * (1.0 - f) + posB * f;
-        particles.particles[index].vel = (posB - posA) * 0.2 + vec2<f32>(
+        pos = disc + posA * (1.0 - f) + posB * f;
+        vel = (posB - posA) * 0.2 + vec2<f32>(
           randrange(f32(index) * 2.135708, -randomMag, randomMag),
           randrange(f32(index) * 1.198923, -randomMag, randomMag)
         );
       }
+
+      // write back
+      particles.particles[index].pos = pos;
+      particles.particles[index].vel = vel;
     }
   `;
   const updateParticlesModule = device.createShaderModule({code: updateParticlesShader});
