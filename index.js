@@ -270,6 +270,49 @@ const init = async () => {
     }
   });
 
+  const bgShader = /* wgsl */`
+    ${uniformsChunk}
+    ${utilChunk}
+
+    [[stage(vertex)]]
+    fn vert_main(
+      [[builtin(vertex_index)]] vertexIndex : u32,
+    ) -> [[builtin(position)]] vec4<f32> {
+      var pos = array<vec4<f32>, 6>(
+        vec4<f32>(-1.0, -1.0, 0.0, 1.0),
+        vec4<f32>(1.0, -1.0, 0.0, 1.0),
+        vec4<f32>(1.0, 1.0, 0.0, 1.0),
+        vec4<f32>(-1.0, -1.0, 0.0, 1.0),
+        vec4<f32>(1.0, 1.0, 0.0, 1.0),
+        vec4<f32>(-1.0, 1.0, 0.0, 1.0),
+      );
+      return pos[vertexIndex];
+    }
+
+    [[stage(fragment)]]
+    fn frag_main(
+      [[builtin(position)]] position: vec4<f32>,
+    ) -> [[location(0)]] vec4<f32> {
+      return vec4<f32>(position.xy / uniforms.resolution, 0.0, 1.0);
+    }
+  `;
+  const bgModule = device.createShaderModule({code: bgShader});
+
+  const renderBgPipeline = device.createRenderPipeline({
+    vertex: {
+      module: bgModule,
+      entryPoint: 'vert_main',
+    },
+    fragment: {
+      module: bgModule,
+      entryPoint: 'frag_main',
+      targets: [{format: textureFormat}],
+    },
+    primitive: {
+      topology: 'triangle-list',
+    },
+  });
+
   const updateParticlesShader = /* wgsl */`
     ${uniformsChunk}
     ${utilChunk}
@@ -348,6 +391,19 @@ const init = async () => {
       },
     ]
   });
+  const renderBgBindGroup = device.createBindGroup({
+    layout: renderPipeline.getBindGroupLayout(0),
+    entries: [
+      {
+        binding: 0,
+        resource: {
+          buffer: uniforms.dataBuffer,
+          offset: 0,
+          size: uniforms.totalSize,
+        }
+      },
+    ]
+  });
   const updateParticlesBindGroup = device.createBindGroup({
     layout: updateParticlesPipeline.getBindGroupLayout(0),
     entries: [
@@ -394,30 +450,47 @@ const init = async () => {
     // the texture we should render to for this frame (i.e. not the one currently being displayed)
     const textureView = ctx.getCurrentTexture().createView();
 
-    // encode a render pass (as opposed to a compute pass)
-    const renderEncoder = encoder.beginRenderPass({
-      // you get a color attachment by default in GL (e.g. where gl_FragColor or location 0 goes), but they're also configurable in GL.
-      colorAttachments: [
-        {
-          view: textureView, // the output texture for this color attachment
-          // this is either 'load' or a color. If 'load', load the existing texture data into the render pass.
-          // If a color, clear the texture to this color instead. This is preferred, because 'load' is expensive on some hardware.
-          // This is like glClearColor.
-          loadValue: {r: 0, g: 0, b: 0, a: 1},
-          storeOp: 'store', // either 'store' or 'discard' (why?) the output
-        }
-      ]
-    });
-    renderEncoder.setPipeline(renderPipeline); // kind of like glUseProgram
-    renderEncoder.setBindGroup(0, renderBindGroup);
-    renderEncoder.setVertexBuffer(0, particlesBuffer);
-    renderEncoder.draw(
-      3, // vertex count
-      nParticles, // instance count
-      0, // first vertex
-      0, // first instance
-    ); // just like glDrawArrays!
-    renderEncoder.endPass();
+    {
+      const renderEncoder = encoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: textureView,
+            loadValue: {r: 0, g: 0, b: 0, a: 1.0},
+            storeOp: 'store',
+          }
+        ]
+      })
+      renderEncoder.setPipeline(renderBgPipeline);
+      renderEncoder.setBindGroup(0, renderBgBindGroup);
+      renderEncoder.draw(6, 1, 0, 0);
+      renderEncoder.endPass();
+    }
+    {
+      // encode a render pass (as opposed to a compute pass)
+      const renderEncoder = encoder.beginRenderPass({
+        // you get a color attachment by default in GL (e.g. where gl_FragColor or location 0 goes), but they're also configurable in GL.
+        colorAttachments: [
+          {
+            view: textureView, // the output texture for this color attachment
+            // this is either 'load' or a color. If 'load', load the existing texture data into the render pass.
+            // If a color, clear the texture to this color instead. This is preferred, because 'load' is expensive on some hardware.
+            // This is like glClearColor.
+            loadValue: 'load',
+            storeOp: 'store', // either 'store' or 'discard' (why?) the output
+          }
+        ]
+      });
+      renderEncoder.setPipeline(renderPipeline); // kind of like glUseProgram
+      renderEncoder.setBindGroup(0, renderBindGroup);
+      renderEncoder.setVertexBuffer(0, particlesBuffer);
+      renderEncoder.draw(
+        3, // vertex count
+        nParticles, // instance count
+        0, // first vertex
+        0, // first instance
+      ); // just like glDrawArrays!
+      renderEncoder.endPass();
+    }
 
     const computeEncoder = encoder.beginComputePass();
     computeEncoder.setPipeline(updateParticlesPipeline);
