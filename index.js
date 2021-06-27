@@ -1,10 +1,25 @@
 import getUtils from './util.js';
+import dat from './dat.gui.module.js';
 
 const init = async () => {
   if (!navigator.gpu) {
     alert('webgpu not supported');
     return;
   }
+
+  const params = {
+    mouseCount: 2500.0,
+    mouseSpeed: 0.2,
+    gravity: 0.0005,
+    windStrength: 0.0005,
+    dragCoeff: 0.01,
+  };
+  const gui = new dat.GUI({name: 'wgpu-particles'});
+  gui.add(params, 'mouseCount').step(1).min(1);
+  gui.add(params, 'mouseSpeed').step(0.01);
+  gui.add(params, 'gravity').step(0.0001);
+  gui.add(params, 'windStrength').step(0.0001);
+  gui.add(params, 'dragCoeff').step(0.01);
 
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice();
@@ -56,6 +71,11 @@ const init = async () => {
       time: {length: 1},
       counter: {length: 1},
       nParticles: {length: 1},
+      gravity: {length: 1},
+      windStrength: {length: 1},
+      dragCoeff: {length: 1},
+      mouseCount: {length: 1},
+      mouseSpeed: {length: 1},
     }, 
     {ArrayType: Float32Array},
   );
@@ -68,6 +88,11 @@ const init = async () => {
       time: f32;
       counter: f32;
       nParticles: f32;
+      gravity: f32;
+      windStrength: f32;
+      dragCoeff: f32;
+      mouseCount: f32;
+      mouseSpeed: f32;
     };
     // we'll bind this during the render pass using setBindGroup()
     [[binding(0), group(0)]] var<uniform> uniforms : Uniforms;
@@ -175,16 +200,17 @@ const init = async () => {
       [[location(0)]] particlePos: vec2<f32>,
       [[location(1)]] particleVel: vec2<f32>,
     ) -> VertexOutput {
-      var scale = vec2<f32>(0.0025, length(particleVel) * 5.0);
+      let scale = vec2<f32>(0.0025, length(particleVel) * 5.0);
+      // not sure why this has to be a variable
       var vertexCoords = array<vec2<f32>, 3>(
         vec2<f32>(0.0, -0.5),
         vec2<f32>(0.5, 0.5),
         vec2<f32>(-0.5, 0.5)
       );
-      var vertex = vertexCoords[vertexIndex];
-      var center = particlePos * vec2<f32>(2.0, -2.0);
-      var angle = atan2(particleVel.x, particleVel.y);
-      var pos = vec2<f32>(
+      let vertex = vertexCoords[vertexIndex];
+      let center = particlePos * vec2<f32>(2.0, -2.0);
+      let angle = atan2(particleVel.x, particleVel.y);
+      let pos = vec2<f32>(
         (vertex.x * scale.x * cos(angle)) - (vertex.y * scale.y * sin(angle)),
         (vertex.x * scale.x * sin(angle)) + (vertex.y * scale.y * cos(angle))
       );
@@ -259,37 +285,39 @@ const init = async () => {
 
     [[stage(compute), workgroup_size(1)]]
     fn main([[builtin(global_invocation_id)]] globalInvocationId : vec3<u32>) {
-      var index = globalInvocationId.x;
+      let index = globalInvocationId.x;
       // physics integration
       var pos = particles.particles[index].pos;
       var vel = particles.particles[index].vel;
       pos = pos + vel;
-      vel.y = vel.y + 0.0005;
+      vel.y = vel.y + uniforms.gravity;
 
       // wind
-      let windX = noise(vec3<f32>(pos * 1.19012, uniforms.time * 0.2)) 
-                + noise(vec3<f32>(pos * 2.3589, uniforms.time * 0.5)) * 0.5;
-      let windY = noise(vec3<f32>(pos * 1.19012, uniforms.time * 0.2 + 221.298)) 
-                + noise(vec3<f32>(pos * 2.3589, uniforms.time * 0.5 + 121.99)) * 0.5;
-      vel = vel + vec2<f32>(windX, windY) * 0.005;
+      let windX = noise(vec3<f32>(pos * 2.19012, uniforms.time * 0.2)) 
+                + noise(vec3<f32>(pos * 4.3589, uniforms.time * 0.5)) * 0.5;
+      let windY = noise(vec3<f32>(pos * 2.19012, uniforms.time * 0.2 + 221.298)) 
+                + noise(vec3<f32>(pos * 4.3589, uniforms.time * 0.5 + 121.99)) * 0.5;
+      vel = vel + vec2<f32>(windX, windY) * uniforms.windStrength;
 
       // mouse interaction
-      var n = 2500.0;
-      var counterDiff = f32(index) - (uniforms.counter * n) % uniforms.nParticles;
-      if (0.0 < counterDiff && counterDiff < n) {
-        var posA = uniforms.mousePrevPos / uniforms.resolution;
-        var posB = uniforms.mousePos / uniforms.resolution;
-        var randomMag = 0.0005 + 0.04 * length(posB - posA);
-        var f = counterDiff / n;
-        var discAngle = randrange(f32(index) * 0.71873, 0.0, 6.28);
-        var discLen = randrange(f32(index) * 3.19888, 0.0, 0.05);
-        var disc = vec2<f32>(cos(discAngle) * discLen, sin(discAngle) * discLen);
+      let counterDiff = f32(index) - (uniforms.counter * uniforms.mouseCount) % uniforms.nParticles;
+      if (0.0 < counterDiff && counterDiff < uniforms.mouseCount) {
+        let posA = uniforms.mousePrevPos / uniforms.resolution;
+        let posB = uniforms.mousePos / uniforms.resolution;
+        let randomMag = 0.0005 + 0.04 * length(posB - posA);
+        let f = counterDiff / uniforms.mouseCount;
+        let discAngle = randrange(f32(index) * 0.71873, 0.0, 6.28);
+        let discLen = randrange(f32(index) * 3.19888, 0.0, 0.05);
+        let disc = vec2<f32>(cos(discAngle) * discLen, sin(discAngle) * discLen);
         pos = disc + posA * (1.0 - f) + posB * f;
-        vel = (posB - posA) * 0.2 + vec2<f32>(
+        vel = (posB - posA) * uniforms.mouseSpeed + vec2<f32>(
           randrange(f32(index) * 2.135708, -randomMag, randomMag),
           randrange(f32(index) * 1.198923, -randomMag, randomMag)
         );
       }
+
+      // drag
+      vel = vel - vel * uniforms.dragCoeff * pow(length(vel), 2.0);
 
       // write back
       particles.particles[index].pos = pos;
@@ -354,6 +382,11 @@ const init = async () => {
       time: [(Date.now() - t0) / 1000],
       counter: [++counter],
       nParticles: [nParticles],
+      gravity: [params.gravity],
+      windStrength: [params.windStrength],
+      dragCoeff: [params.dragCoeff],
+      mouseCount: [params.mouseCount],
+      mouseSpeed: [params.mouseSpeed],
     });
     mousePx = mouseX;
     mousePy = mouseY;
