@@ -9,7 +9,7 @@ const init = async () => {
 
   const params = {
     mouseCount: 2500.0,
-    mouseSpeed: 0.2,
+    mouseSpeed: 0.5,
     gravity: 0.0005,
     windStrength: 0.0005,
     dragCoeff: 0.01,
@@ -158,10 +158,18 @@ const init = async () => {
                      mix(dot(hash3(i + vec3<i32>(0, 1, 1)), f - vec3<f32>(0.0, 1.0, 1.0)), 
                          dot(hash3(i + vec3<i32>(1, 1, 1)), f - vec3<f32>(1.0, 1.0, 1.0)), u.x), u.y), u.z);
     }
+
+    fn windForce(pos: vec2<f32>) -> vec2<f32> {
+      let windX = noise(vec3<f32>(pos * 2.19012, uniforms.time * 0.2)) 
+                + noise(vec3<f32>(pos * 4.3589, uniforms.time * 0.5)) * 0.5;
+      let windY = noise(vec3<f32>(pos * 2.19012, uniforms.time * 0.2 + 221.298)) 
+                + noise(vec3<f32>(pos * 4.3589, uniforms.time * 0.5 + 121.99)) * 0.5;
+      return vec2<f32>(windX, windY);
+    }
   `;
 
   // create initial data for particles
-  const nParticles = 500000;
+  const nParticles = 1000000;
   const nParticleProps = 4;
   const initialParticleData = new Float32Array(nParticles * nParticleProps);
   for (let i = 0; i < nParticles; ++i) {
@@ -200,7 +208,7 @@ const init = async () => {
       [[location(0)]] particlePos: vec2<f32>,
       [[location(1)]] particleVel: vec2<f32>,
     ) -> VertexOutput {
-      let scale = vec2<f32>(0.0025, length(particleVel) * 5.0);
+      let scale = vec2<f32>(0.005, length(particleVel));
       // not sure why this has to be a variable
       var vertexCoords = array<vec2<f32>, 3>(
         vec2<f32>(0.0, -0.5),
@@ -216,7 +224,7 @@ const init = async () => {
       );
       var output : VertexOutput;
       output.position = vec4<f32>(vec2<f32>(-1.0, 1.0) + center + pos, 0.0, 1.0);
-      output.color = vec4<f32>(hsv2rgb(vec3<f32>(f32(instanceIndex) / uniforms.nParticles, randrange(f32(instanceIndex), 0.3, 0.7), 0.5)), 1.0);
+      output.color = vec4<f32>(hsv2rgb(vec3<f32>(f32(instanceIndex) / uniforms.nParticles, randrange(f32(instanceIndex), 0.3, 0.7), 1.0)), 1.0);
       return output;
     }
 
@@ -293,7 +301,8 @@ const init = async () => {
     fn frag_main(
       [[builtin(position)]] position: vec4<f32>,
     ) -> [[location(0)]] vec4<f32> {
-      return vec4<f32>(position.xy / uniforms.resolution, 0.0, 1.0);
+      return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+      // return vec4<f32>(windForce(position.xy / uniforms.resolution), 0.0, 1.0);
     }
   `;
   const bgModule = device.createShaderModule({code: bgShader});
@@ -336,24 +345,26 @@ const init = async () => {
       vel.y = vel.y + uniforms.gravity;
 
       // wind
-      let windX = noise(vec3<f32>(pos * 2.19012, uniforms.time * 0.2)) 
-                + noise(vec3<f32>(pos * 4.3589, uniforms.time * 0.5)) * 0.5;
-      let windY = noise(vec3<f32>(pos * 2.19012, uniforms.time * 0.2 + 221.298)) 
-                + noise(vec3<f32>(pos * 4.3589, uniforms.time * 0.5 + 121.99)) * 0.5;
-      vel = vel + vec2<f32>(windX, windY) * uniforms.windStrength;
+      vel = vel + windForce(pos) * uniforms.windStrength;
 
       // mouse interaction
       let counterDiff = f32(index) - (uniforms.counter * uniforms.mouseCount) % uniforms.nParticles;
       if (0.0 < counterDiff && counterDiff < uniforms.mouseCount) {
         let posA = uniforms.mousePrevPos / uniforms.resolution;
         let posB = uniforms.mousePos / uniforms.resolution;
-        let randomMag = 0.0005 + 0.04 * length(posB - posA);
+        let dx = posB - posA;
+        var angle = atan2(dx.y, dx.x);
+        var len = length(dx);
+        angle = angle + randrange(f32(index) * 91.24111, -0.1, 0.1);
+        len = len * randrange(f32(index) * 15.15981, 0.1, 1.0);
+        let randomMag = 0.0002 + 0.04 * length(posB - posA);
         let f = counterDiff / uniforms.mouseCount;
         let discAngle = randrange(f32(index) * 0.71873, 0.0, 6.28);
         let discLen = randrange(f32(index) * 3.19888, 0.0, 0.05);
         let disc = vec2<f32>(cos(discAngle) * discLen, sin(discAngle) * discLen);
+        let newDx = vec2<f32>(cos(angle) * len, sin(angle) * len);
         pos = disc + posA * (1.0 - f) + posB * f;
-        vel = (posB - posA) * uniforms.mouseSpeed + vec2<f32>(
+        vel = newDx * uniforms.mouseSpeed + vec2<f32>(
           randrange(f32(index) * 2.135708, -randomMag, randomMag),
           randrange(f32(index) * 1.198923, -randomMag, randomMag)
         );
