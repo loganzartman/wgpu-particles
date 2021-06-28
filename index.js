@@ -1,3 +1,4 @@
+import {getWebgpuContext, polyfillWebgpu} from './polyfills.js';
 import getUtils from './util.js';
 import dat from './dat.gui.module.js';
 
@@ -6,6 +7,7 @@ const init = async () => {
     alert('webgpu not supported');
     return;
   }
+  polyfillWebgpu();
 
   const params = {
     mouseCount: 2500.0,
@@ -21,6 +23,9 @@ const init = async () => {
   gui.add(params, 'windStrength').step(0.0001);
   gui.add(params, 'dragCoeff').step(0.01);
 
+  const t0 = Date.now();
+  let counter = 0;
+
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice();
   const utils = getUtils({device});
@@ -28,12 +33,19 @@ const init = async () => {
   const canvas = document.createElement('canvas');
   document.body.appendChild(canvas);
 
-  const t0 = Date.now();
-  let counter = 0;
-  
-  // the WebGPU canvas context
-  const ctx = canvas.getContext('gpupresent');
+  const ctx = getWebgpuContext(canvas);
+
   const textureFormat = 'bgra8unorm'; 
+
+  // polyfill configure()
+  if (!ctx.configure) {
+    let swapChain = null;
+    ctx.configure = (...args) => {
+      swapChain = ctx.configureSwapChain(...args);
+    };
+    ctx.getCurrentTexture = (...args) => 
+      swapChain.getCurrentTexture(...args);
+  }
 
   let width, height;
   const onResize = () => {
@@ -182,9 +194,9 @@ const init = async () => {
   // create particle data storage buffer and load initial data
   const particlesBuffer = device.createBuffer({
     size: initialParticleData.byteLength,
-    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE,
-    mappedAtCreation: true,
+    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.MAP_WRITE,
   });
+  await particlesBuffer.mapAsync(GPUMapMode.WRITE);
   new Float32Array(particlesBuffer.getMappedRange()).set(initialParticleData);
   particlesBuffer.unmap();
 
