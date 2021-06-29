@@ -8,15 +8,15 @@ const init = async () => {
   }
 
   const params = {
-    mouseCount: 2500.0,
-    mouseSpeed: 0.5,
+    emitterCount: 2500.0,
+    emitterSpeed: 0.5,
     gravity: 0.0005,
     windStrength: 0.0005,
     dragCoeff: 0.01,
   };
   const gui = new dat.GUI({name: 'wgpu-particles'});
-  gui.add(params, 'mouseCount').step(1).min(1);
-  gui.add(params, 'mouseSpeed').step(0.01);
+  gui.add(params, 'emitterCount').step(1).min(1);
+  gui.add(params, 'emitterSpeed').step(0.01);
   gui.add(params, 'gravity').step(0.0001);
   gui.add(params, 'windStrength').step(0.0001);
   gui.add(params, 'dragCoeff').step(0.01);
@@ -66,16 +66,16 @@ const init = async () => {
   const uniforms = utils.createUniforms(
     {
       resolution: {length: 2},
-      mousePos: {length: 2},
-      mousePrevPos: {length: 2},
+      emitterPos: {length: 2},
+      emitterPrevPos: {length: 2},
       time: {length: 1},
       counter: {length: 1},
       nParticles: {length: 1},
       gravity: {length: 1},
       windStrength: {length: 1},
       dragCoeff: {length: 1},
-      mouseCount: {length: 1},
-      mouseSpeed: {length: 1},
+      emitterCount: {length: 1},
+      emitterSpeed: {length: 1},
     }, 
     {ArrayType: Float32Array},
   );
@@ -83,16 +83,16 @@ const init = async () => {
   const uniformsChunk = /* wgsl */`
     [[block]] struct Uniforms {
       resolution: vec2<f32>;
-      mousePos: vec2<f32>;
-      mousePrevPos: vec2<f32>;
+      emitterPos: vec2<f32>;
+      emitterPrevPos: vec2<f32>;
       time: f32;
       counter: f32;
       nParticles: f32;
       gravity: f32;
       windStrength: f32;
       dragCoeff: f32;
-      mouseCount: f32;
-      mouseSpeed: f32;
+      emitterCount: f32;
+      emitterSpeed: f32;
     };
     // we'll bind this during the render pass using setBindGroup()
     [[binding(0), group(0)]] var<uniform> uniforms : Uniforms;
@@ -355,23 +355,23 @@ const init = async () => {
       vel = vel + windForce(pos) * uniforms.windStrength;
 
       // mouse interaction
-      let counterDiff = f32(index) - (uniforms.counter * uniforms.mouseCount) % uniforms.nParticles;
-      if (0.0 < counterDiff && counterDiff < uniforms.mouseCount) {
-        let posA = uniforms.mousePrevPos / uniforms.resolution;
-        let posB = uniforms.mousePos / uniforms.resolution;
+      let counterDiff = f32(index) - (uniforms.counter * uniforms.emitterCount) % uniforms.nParticles;
+      if (0.0 < counterDiff && counterDiff < uniforms.emitterCount) {
+        let posA = uniforms.emitterPrevPos / uniforms.resolution;
+        let posB = uniforms.emitterPos / uniforms.resolution;
         let dx = posB - posA;
         var angle = atan2(dx.y, dx.x);
         var len = length(dx);
         angle = angle + randrange(f32(index) * 91.24111, -0.1, 0.1);
         len = len * randrange(f32(index) * 15.15981, 0.1, 1.0);
         let randomMag = 0.0002 + 0.04 * length(posB - posA);
-        let f = counterDiff / uniforms.mouseCount;
+        let f = counterDiff / uniforms.emitterCount;
         let discAngle = randrange(f32(index) * 0.71873, 0.0, 6.28);
         let discLen = randrange(f32(index) * 3.19888, 0.0, 0.05);
         let disc = vec2<f32>(cos(discAngle) * discLen, sin(discAngle) * discLen);
         let newDx = vec2<f32>(cos(angle) * len, sin(angle) * len);
         pos = disc + posA * (1.0 - f) + posB * f;
-        vel = newDx * uniforms.mouseSpeed + vec2<f32>(
+        vel = newDx * uniforms.emitterSpeed + vec2<f32>(
           randrange(f32(index) * 2.135708, -randomMag, randomMag),
           randrange(f32(index) * 1.198923, -randomMag, randomMag)
         );
@@ -451,16 +451,16 @@ const init = async () => {
     const encoder = device.createCommandEncoder();
     await uniforms.setData({
       resolution: [width, height],
-      mousePos: [mouseX, mouseY],
-      mousePrevPos: [mousePx, mousePy],
+      emitterPos: [mouseX, mouseY],
+      emitterPrevPos: [mousePx, mousePy],
       time: [(Date.now() - t0) / 1000],
       counter: [++counter],
       nParticles: [nParticles],
       gravity: [params.gravity],
       windStrength: [params.windStrength],
       dragCoeff: [params.dragCoeff],
-      mouseCount: [params.mouseCount],
-      mouseSpeed: [params.mouseSpeed],
+      emitterCount: [params.emitterCount],
+      emitterSpeed: [params.emitterSpeed],
     });
     mousePx = mouseX;
     mousePy = mouseY;
