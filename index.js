@@ -13,6 +13,7 @@ const init = async () => {
     gravity: 0.0005,
     windStrength: 0.0005,
     dragCoeff: 0.01,
+    brightness: 0.5,
   };
   const gui = new dat.GUI({name: 'wgpu-particles'});
   gui.add(params, 'emitterCount').step(1).min(1);
@@ -20,6 +21,7 @@ const init = async () => {
   gui.add(params, 'gravity').step(0.0001);
   gui.add(params, 'windStrength').step(0.0001);
   gui.add(params, 'dragCoeff').step(0.01);
+  gui.add(params, 'brightness').min(0).max(1).step(0.01);
 
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice();
@@ -91,6 +93,7 @@ const init = async () => {
       dragCoeff: {type: 'f32'},
       emitterCount: {type: 'f32'},
       emitterSpeed: {type: 'f32'},
+      brightness: {type: 'f32'},
     }, 
   );
 
@@ -226,7 +229,14 @@ const init = async () => {
       );
       var output : VertexOutput;
       output.position = vec4<f32>(vec2<f32>(-1.0, 1.0) + center + pos, 0.0, 1.0);
-      output.color = vec4<f32>(hsv2rgb(vec3<f32>(f32(instanceIndex) / uniforms.nParticles, randrange(f32(instanceIndex), 0.3, 0.7), 1.0)), 1.0);
+      output.color = vec4<f32>(
+        hsv2rgb(vec3<f32>(
+          f32(instanceIndex) / uniforms.nParticles, 
+          randrange(f32(instanceIndex), 0.3, 0.7), 
+          1.0
+        )), 
+        uniforms.brightness,
+      );
       return output;
     }
 
@@ -485,6 +495,7 @@ const init = async () => {
       dragCoeff: params.dragCoeff,
       emitterCount: params.emitterCount,
       emitterSpeed: params.emitterSpeed,
+      brightness: params.brightness,
     });
     emitterPx = emitterX;
     emitterPy = emitterY;
