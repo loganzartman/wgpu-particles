@@ -57,11 +57,17 @@ const init = async () => {
   window.addEventListener('resize', onResize, false);
 
   let mouseX = 0, mouseY = 0;
-  let mousePx = 0, mousePy = 0;
   window.addEventListener('pointermove', (event) => {
     mouseX = event.clientX * window.devicePixelRatio;
     mouseY = event.clientY * window.devicePixelRatio;
   }, false);
+
+  let emitterX = window.innerWidth * window.devicePixelRatio / 2;
+  let emitterY = window.innerWidth * window.devicePixelRatio / 2;
+  let emitterVx = 0;
+  let emitterVy = 0;
+  let emitterPx = emitterX;
+  let emitterPy = emitterY;
 
   const uniforms = utils.createUniforms(
     {
@@ -444,15 +450,31 @@ const init = async () => {
     ]
   });
 
+  const physicsStep = () => {
+    const emitterAccel = 0.2;
+    const emitterDamping = 0.2;
+    const dx = mouseX - emitterX;
+    const dy = mouseY - emitterY;
+    emitterVx += dx * emitterAccel;
+    emitterVy += dy * emitterAccel;
+    emitterX += emitterVx;
+    emitterY += emitterVy;
+    emitterVx *= 1 - emitterDamping;
+    emitterVy *= 1 - emitterDamping;
+  }
+
   const frame = async () => {
     // a thing that encodes a list of commands to send to the GPU.
     // you can make multiple encoders to create several "command buffers", where everything in one command
     // buffer runs concurrently, but several command buffers submitted at once will run in sequence.
     const encoder = device.createCommandEncoder();
+
+    physicsStep();
+
     await uniforms.setData({
       resolution: [width, height],
-      emitterPos: [mouseX, mouseY],
-      emitterPrevPos: [mousePx, mousePy],
+      emitterPos: [emitterX, emitterY],
+      emitterPrevPos: [emitterPx, emitterPy],
       time: [(Date.now() - t0) / 1000],
       counter: [++counter],
       nParticles: [nParticles],
@@ -462,8 +484,8 @@ const init = async () => {
       emitterCount: [params.emitterCount],
       emitterSpeed: [params.emitterSpeed],
     });
-    mousePx = mouseX;
-    mousePy = mouseY;
+    emitterPx = emitterX;
+    emitterPy = emitterY;
 
     // the texture we should render to for this frame (i.e. not the one currently being displayed)
     const textureView = ctx.getCurrentTexture().createView();
