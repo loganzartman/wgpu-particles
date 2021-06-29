@@ -269,8 +269,15 @@ const init = async () => {
     fragment: {
       module: triangleModule,
       entryPoint: 'frag_main',
-      // ?
-      targets: [{format: textureFormat}],
+      targets: [
+        {
+          format: textureFormat,
+          blend: {
+            color: {srcFactor: 'one', dstFactor: 'one', operation: 'add'},
+            alpha: {srcFactor: 'one', dstFactor: 'one', operation: 'add'},
+          }
+        }
+      ],
     },
     primitive: {
       // what geometric primitive(s) the vertices represent; same as GL
