@@ -1,41 +1,83 @@
-const arrayTypeForElementType = (elementType) => {
+const arrayTypeForScalarType = (scalarType) => {
   const arrayTypes = {
-    'u8': Uint8Array,
-    'u16': Uint16Array,
     'u32': Uint32Array,
-    'i8': Int8Array,
-    'i16': Int16Array,
     'i32': Int32Array,
     'f32': Float32Array,
+    /* 
+    // "reserved for future expansion"
+    'bool': Uint8Array,
+    'u8': Uint8Array,
+    'i8': Int8Array,
+    'u16': Uint16Array,
+    'i16': Int16Array,
     'f64': Float64Array,
+    */
   };
-  if (!arrayTypes.hasOwnProperty(elementType)) {
-    throw new Error(`Unsupported element type: ${elementType}`);
+  if (!arrayTypes.hasOwnProperty(scalarType)) {
+    throw new Error(`Unsupported scalar type: ${scalarType}`);
   }
-  return arrayTypes[elementType];
+  return arrayTypes[scalarType];
 };
+
+const greaterPowerOf2 = (x) => 2 ** Math.ceil(Math.log2(x));
+const roundUp = (base, value) => base * Math.ceil(value / base);
+
+const REX_MATRIX = /^mat([2-4])x([2-4])<(\w+)>$/;
+const REX_VECTOR = /^vec([2-4])<(\w+)>$/;
+const REX_SCALAR = /^(\w+)$/;
 
 const parseType = (type) => {
   const patterns = [
-    [/^vec([2-4])<(\w+)>$/, (match) => {
-      const ArrayType = arrayTypeForElementType(match[2]);
+    [REX_MATRIX, (match) => {
+      const ArrayType = arrayTypeForScalarType(match[3]);
+      const n = Number.parseInt(match[1]);
+      const m = Number.parseInt(match[2]);
+      const length = n * m;
+      const elementSize = ArrayType.BYTES_PER_ELEMENT;
+      const vecM = parseType(`vec${m}<${match[3]}>`);
+      const alignOf = vecM.alignOf * n;
+      const sizeOf = n * roundUp(vecM.alignOf, vecM.sizeOf);
       return {
+        category: 'matrix',
         type,
-        length: Number.parseInt(match[1]),
-        elementSize: ArrayType.BYTES_PER_ELEMENT,
+        length,
+        elementSize,
+        sizeOf,
+        alignOf,
         ArrayType,
       };
     }],
-    [/^(\w+)$/, (match) => {
-      const ArrayType = arrayTypeForElementType(match[1]);
+    [REX_VECTOR, (match) => {
+      const ArrayType = arrayTypeForScalarType(match[2]);
+      const length = Number.parseInt(match[1]);
+      const elementSize = ArrayType.BYTES_PER_ELEMENT;
+      const sizeOf = length * elementSize;
+      const alignOf = greaterPowerOf2(sizeOf);
       return {
+        category: 'vector',
+        type,
+        length,
+        elementSize,
+        sizeOf,
+        alignOf,
+        ArrayType,
+      };
+    }],
+    [REX_SCALAR, (match) => {
+      const ArrayType = arrayTypeForScalarType(match[1]);
+      const elementSize = ArrayType.BYTES_PER_ELEMENT;
+      return {
+        category: 'scalar',
         type,
         length: 1,
-        elementSize: ArrayType.BYTES_PER_ELEMENT,
+        elementSize,
+        sizeOf: elementSize,
+        alignOf: elementSize,
         ArrayType,
-      }
+      };
     }],
   ];
+
   for (const [pattern, fn] of patterns) {
     const match = pattern.exec(type);
     if (match) {
@@ -46,14 +88,13 @@ const parseType = (type) => {
 };
 
 const getUtils = ({device}) => ({
-  createUniforms(config) {
-    // compute offsets for uniforms
+  structLayout(config) {
     let totalOffset = 0;
-    const uniforms = Object.fromEntries(Object.entries(config).map(([name, {type}]) => {
+
+    const layout = Object.fromEntries(Object.entries(config).map(([name, {type}]) => {
       const props = parseType(type);
-      const size = props.elementSize * props.length;
-      const offset = totalOffset;
-      totalOffset += size;
+      const offset = roundUp(props.alignOf, totalOffset);
+      totalOffset = offset + props.sizeOf;
       return [
         name,
         {
@@ -63,7 +104,20 @@ const getUtils = ({device}) => ({
       ];
     }));
 
-    const totalSize = totalOffset;
+    const maxAlign = Object.values(layout).reduce(
+      (max, {alignOf}) => Math.max(max, alignOf),
+      0,
+    );
+
+    const totalSize = roundUp(maxAlign, totalOffset);
+
+    return {layout, maxAlign, totalSize};
+  },
+
+  createUniforms(config) {
+    // compute offsets for uniforms
+    const {layout: uniforms, totalSize} = this.structLayout(config);
+
     const dataBuffer = device.createBuffer({
       // COPY_DST mode means this buffer will be the target of buffer copy operations
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -94,14 +148,14 @@ const getUtils = ({device}) => ({
     };
 
     const structDefinition = (typeName) => {
-      const fields = Object.entries(uniforms).map(([name, {type}]) => {
-        return `${name}: ${type};`;
+      const fields = Object.entries(uniforms).map(([name, {type, alignOf, sizeOf, offset}]) => {
+        return ` [[align(${alignOf})]] [[size(${sizeOf})]] ${name}: ${type};`;
       });
-      return `
-        [[block]] struct ${typeName} {
-          ${fields.join('\n')}
-        };
-      `;
+      return [
+        `[[block]] struct ${typeName} {`,
+        fields.join('\n'),
+        `};`
+      ].join('\n');
     };
 
     return {dataBuffer, totalSize, setData, structDefinition, uniforms};
