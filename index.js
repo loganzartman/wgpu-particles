@@ -71,35 +71,22 @@ const init = async () => {
 
   const uniforms = utils.createUniforms(
     {
-      resolution: {length: 2},
-      emitterPos: {length: 2},
-      emitterPrevPos: {length: 2},
-      time: {length: 1},
-      counter: {length: 1},
-      nParticles: {length: 1},
-      gravity: {length: 1},
-      windStrength: {length: 1},
-      dragCoeff: {length: 1},
-      emitterCount: {length: 1},
-      emitterSpeed: {length: 1},
+      resolution: {type: 'vec2<f32>'},
+      emitterPos: {type: 'vec2<f32>'},
+      emitterPrevPos: {type: 'vec2<f32>'},
+      time: {type: 'f32'},
+      counter: {type: 'f32'},
+      nParticles: {type: 'f32'},
+      gravity: {type: 'f32'},
+      windStrength: {type: 'f32'},
+      dragCoeff: {type: 'f32'},
+      emitterCount: {type: 'f32'},
+      emitterSpeed: {type: 'f32'},
     }, 
-    {ArrayType: Float32Array},
   );
 
   const uniformsChunk = /* wgsl */`
-    [[block]] struct Uniforms {
-      resolution: vec2<f32>;
-      emitterPos: vec2<f32>;
-      emitterPrevPos: vec2<f32>;
-      time: f32;
-      counter: f32;
-      nParticles: f32;
-      gravity: f32;
-      windStrength: f32;
-      dragCoeff: f32;
-      emitterCount: f32;
-      emitterSpeed: f32;
-    };
+    ${uniforms.structDefinition('Uniforms')}
     // we'll bind this during the render pass using setBindGroup()
     [[binding(0), group(0)]] var<uniform> uniforms : Uniforms;
   `;
@@ -475,14 +462,14 @@ const init = async () => {
       resolution: [width, height],
       emitterPos: [emitterX, emitterY],
       emitterPrevPos: [emitterPx, emitterPy],
-      time: [(Date.now() - t0) / 1000],
-      counter: [++counter],
-      nParticles: [nParticles],
-      gravity: [params.gravity],
-      windStrength: [params.windStrength],
-      dragCoeff: [params.dragCoeff],
-      emitterCount: [params.emitterCount],
-      emitterSpeed: [params.emitterSpeed],
+      time: (Date.now() - t0) / 1000,
+      counter: ++counter,
+      nParticles: nParticles,
+      gravity: params.gravity,
+      windStrength: params.windStrength,
+      dragCoeff: params.dragCoeff,
+      emitterCount: params.emitterCount,
+      emitterSpeed: params.emitterSpeed,
     });
     emitterPx = emitterX;
     emitterPy = emitterY;
