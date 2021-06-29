@@ -57,10 +57,19 @@ const init = async () => {
   window.addEventListener('resize', onResize, false);
 
   let mouseX = 0, mouseY = 0;
+  let mouseDown = false;
   window.addEventListener('pointermove', (event) => {
     mouseX = event.clientX * window.devicePixelRatio;
     mouseY = event.clientY * window.devicePixelRatio;
   }, false);
+  window.addEventListener('pointerdown', (event) => {
+    if (event.target === canvas) {
+      mouseDown = true;
+    }
+  });
+  window.addEventListener('pointerup', (event) => {
+    mouseDown = false;
+  });
 
   let emitterX = window.innerWidth * window.devicePixelRatio / 2;
   let emitterY = window.innerWidth * window.devicePixelRatio / 2;
@@ -266,7 +275,7 @@ const init = async () => {
         {
           format: textureFormat,
           blend: {
-            color: {srcFactor: 'one', dstFactor: 'one', operation: 'add'},
+            color: {srcFactor: 'src-alpha', dstFactor: 'one', operation: 'add'},
             alpha: {srcFactor: 'one', dstFactor: 'one', operation: 'add'},
           }
         }
@@ -438,10 +447,16 @@ const init = async () => {
   });
 
   const physicsStep = () => {
-    const emitterAccel = 0.2;
-    const emitterDamping = 0.2;
-    const dx = mouseX - emitterX;
-    const dy = mouseY - emitterY;
+    const emitterAccel = 0.1;
+    const emitterDamping = 0.1;
+    let targetX = Math.cos(Date.now() / 100.0) * width * 0.2 + width * 0.5;
+    let targetY = Math.sin(Date.now() / 100.0) * height * 0.2 + height * 0.5;
+    if (mouseDown) {
+      targetX = mouseX;
+      targetY = mouseY;
+    }
+    const dx = targetX - emitterX;
+    const dy = targetY - emitterY;
     emitterVx += dx * emitterAccel;
     emitterVy += dy * emitterAccel;
     emitterX += emitterVx;
