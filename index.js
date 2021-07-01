@@ -8,16 +8,22 @@ const init = async () => {
   }
 
   const params = {
+    emitterRadius: 0.05,
     emitterCount: 2500.0,
     emitterSpeed: 0.5,
+    emitterAccel: 0.2,
+    emitterDamping: 0.2,
     gravity: 0.0005,
     windStrength: 0.0005,
     dragCoeff: 0.01,
     brightness: 0.5,
   };
   const gui = new dat.GUI({name: 'wgpu-particles'});
+  gui.add(params, 'emitterRadius').min(0.01).max(0.5).step(0.01);
   gui.add(params, 'emitterCount').step(1).min(1);
   gui.add(params, 'emitterSpeed').step(0.01);
+  gui.add(params, 'emitterAccel').step(0.01).min(0);
+  gui.add(params, 'emitterDamping').step(0.01).min(0).max(1);
   gui.add(params, 'gravity').step(0.0001);
   gui.add(params, 'windStrength').step(0.0001);
   gui.add(params, 'dragCoeff').step(0.01);
@@ -91,6 +97,7 @@ const init = async () => {
       gravity: {type: 'f32'},
       windStrength: {type: 'f32'},
       dragCoeff: {type: 'f32'},
+      emitterRadius: {type: 'f32'},
       emitterCount: {type: 'f32'},
       emitterSpeed: {type: 'f32'},
       brightness: {type: 'f32'},
@@ -389,7 +396,7 @@ const init = async () => {
         let randomMag = 0.05 * len;
         let f = counterDiff / uniforms.emitterCount;
         let discAngle = randrange(f32(index) * 0.71873, 0.0, 6.28);
-        let discLen = randrange(f32(index) * 3.19888, 0.0, 0.05);
+        let discLen = randrange(f32(index) * 3.19888, 0.0, uniforms.emitterRadius);
         let disc = vec2<f32>(cos(discAngle) * discLen, sin(discAngle) * discLen);
         let newDx = vec2<f32>(cos(angle) * len, sin(angle) * len);
         pos = disc + posA * (1.0 - f) + posB * f;
@@ -467,8 +474,6 @@ const init = async () => {
   });
 
   const physicsStep = () => {
-    const emitterAccel = 0.1;
-    const emitterDamping = 0.1;
     let targetX = Math.cos(Date.now() / 100.0) * width * 0.2 + width * 0.5;
     let targetY = Math.sin(Date.now() / 100.0) * height * 0.2 + height * 0.5;
     if (mouseDown) {
@@ -477,12 +482,12 @@ const init = async () => {
     }
     const dx = targetX - emitterX;
     const dy = targetY - emitterY;
-    emitterVx += dx * emitterAccel;
-    emitterVy += dy * emitterAccel;
+    emitterVx += dx * params.emitterAccel;
+    emitterVy += dy * params.emitterAccel;
     emitterX += emitterVx;
     emitterY += emitterVy;
-    emitterVx *= 1 - emitterDamping;
-    emitterVy *= 1 - emitterDamping;
+    emitterVx *= 1 - params.emitterDamping;
+    emitterVy *= 1 - params.emitterDamping;
   }
 
   const frame = async () => {
@@ -503,6 +508,7 @@ const init = async () => {
       gravity: params.gravity,
       windStrength: params.windStrength,
       dragCoeff: params.dragCoeff,
+      emitterRadius: params.emitterRadius,
       emitterCount: params.emitterCount,
       emitterSpeed: params.emitterSpeed,
       brightness: params.brightness,
