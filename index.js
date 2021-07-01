@@ -171,6 +171,16 @@ const init = async () => {
                 + noise(vec3<f32>(pos * 4.3589, uniforms.time * 0.5 + 121.99)) * 0.5;
       return vec2<f32>(windX, windY);
     }
+
+    fn wrappedDiff(a: f32, b: f32, modulo: f32) -> f32 {
+      let am = a % modulo;
+      let bm = b % modulo;
+      var result = am - bm;
+      if (am < bm) {
+        result = (modulo - bm) + am;
+      }
+      return result;
+    }
   `;
 
   // create initial data for particles
@@ -235,7 +245,7 @@ const init = async () => {
           randrange(f32(instanceIndex), 0.3, 0.7), 
           1.0
         )), 
-        uniforms.brightness,
+        uniforms.brightness * (wrappedDiff(f32(instanceIndex), uniforms.counter * uniforms.emitterCount, uniforms.nParticles) / uniforms.nParticles),
       );
       return output;
     }
@@ -367,8 +377,8 @@ const init = async () => {
       vel = vel + windForce(pos) * uniforms.windStrength;
 
       // mouse interaction
-      let counterDiff = f32(index) - (uniforms.counter * uniforms.emitterCount) % uniforms.nParticles;
-      if (0.0 < counterDiff && counterDiff < uniforms.emitterCount) {
+      let counterDiff = wrappedDiff(f32(index), uniforms.counter * uniforms.emitterCount, uniforms.nParticles);
+      if (counterDiff < uniforms.emitterCount) {
         let posA = uniforms.emitterPrevPos / uniforms.resolution;
         let posB = uniforms.emitterPos / uniforms.resolution;
         let dx = posB - posA;
