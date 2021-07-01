@@ -297,7 +297,7 @@ const init = async () => {
           blend: {
             color: {srcFactor: 'src-alpha', dstFactor: 'one', operation: 'add'},
             alpha: {srcFactor: 'one', dstFactor: 'one', operation: 'add'},
-          }
+          },
         }
       ],
     },
@@ -384,9 +384,9 @@ const init = async () => {
         let dx = posB - posA;
         var angle = atan2(dx.y, dx.x);
         var len = length(dx);
-        angle = angle + randrange(f32(index) * 91.24111, -0.1, 0.1);
+        angle = angle + randrange(f32(index) * 91.24111, -4.0 * len, 4.0 * len);
         len = len * randrange(f32(index) * 15.15981, 0.1, 1.0);
-        let randomMag = 0.0002 + 0.04 * length(posB - posA);
+        let randomMag = 0.05 * len;
         let f = counterDiff / uniforms.emitterCount;
         let discAngle = randrange(f32(index) * 0.71873, 0.0, 6.28);
         let discLen = randrange(f32(index) * 3.19888, 0.0, 0.05);
