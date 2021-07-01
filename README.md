@@ -1,6 +1,6 @@
 # wgpu-particles
 
-this webgpu thing could be good...
+<img width=400 src="https://user-images.githubusercontent.com/3401573/124057642-b8b78700-d9dc-11eb-9ada-51a20046996c.png"/>
 
 ## resources
 
