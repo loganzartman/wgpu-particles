@@ -1,6 +1,11 @@
 import getUtils from './util.js';
 import dat from './dat.gui.module.js';
 
+const setCursorVisible = (show) => {
+  document.body.classList.remove(`cursor-${show ? 'hide' : 'show'}`);
+  document.body.classList.add(`cursor-${show ? 'show' : 'hide'}`);
+};
+
 const init = async () => {
   if (!navigator.gpu) {
     alert('webgpu not supported');
@@ -19,10 +24,10 @@ const init = async () => {
     brightness: 0.5,
   };
   const gui = new dat.GUI({name: 'wgpu-particles'});
-  gui.add(params, 'emitterRadius').min(0.01).max(0.5).step(0.01);
+  gui.add(params, 'emitterRadius').min(0.001).max(0.5).step(0.001);
   gui.add(params, 'emitterCount').step(1).min(1);
   gui.add(params, 'emitterSpeed').step(0.01);
-  gui.add(params, 'emitterAccel').step(0.01).min(0);
+  gui.add(params, 'emitterAccel').step(0.01).min(0).max(1);
   gui.add(params, 'emitterDamping').step(0.01).min(0).max(1);
   gui.add(params, 'gravity').step(0.0001);
   gui.add(params, 'windStrength').step(0.0001);
@@ -73,10 +78,12 @@ const init = async () => {
   window.addEventListener('pointerdown', (event) => {
     if (event.target === canvas) {
       mouseDown = true;
+      setCursorVisible(false);
     }
   });
   window.addEventListener('pointerup', (event) => {
     mouseDown = false;
+    setCursorVisible(true);
   });
 
   let emitterX = window.innerWidth * window.devicePixelRatio / 2;
@@ -473,6 +480,7 @@ const init = async () => {
     ]
   });
 
+  // do the host-side physics for the emitter 
   const physicsStep = () => {
     let targetX = Math.cos(Date.now() / 100.0) * width * 0.2 + width * 0.5;
     let targetY = Math.sin(Date.now() / 100.0) * height * 0.2 + height * 0.5;
@@ -515,6 +523,12 @@ const init = async () => {
     });
     emitterPx = emitterX;
     emitterPy = emitterY;
+
+    const computeEncoder = encoder.beginComputePass();
+    computeEncoder.setPipeline(updateParticlesPipeline);
+    computeEncoder.setBindGroup(0, updateParticlesBindGroup);
+    computeEncoder.dispatch(nParticles);
+    computeEncoder.endPass();
 
     // the texture we should render to for this frame (i.e. not the one currently being displayed)
     const textureView = ctx.getCurrentTexture().createView();
@@ -560,12 +574,6 @@ const init = async () => {
       ); // just like glDrawArrays!
       renderEncoder.endPass();
     }
-
-    const computeEncoder = encoder.beginComputePass();
-    computeEncoder.setPipeline(updateParticlesPipeline);
-    computeEncoder.setBindGroup(0, updateParticlesBindGroup);
-    computeEncoder.dispatch(nParticles);
-    computeEncoder.endPass();
 
     // send command buffers to the GPU!
     device.queue.submit([encoder.finish()]);
