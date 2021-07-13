@@ -12,27 +12,60 @@ const init = async () => {
     return;
   }
 
+  const themes = {
+    'additive': {
+      bg: {r: 0.0, g: 0.0, b: 0.0, a: 1},
+      blend: {
+        color: {srcFactor: 'src-alpha', dstFactor: 'one', operation: 'add'},
+        alpha: {srcFactor: 'one', dstFactor: 'one', operation: 'add'},
+      },
+    },
+    'subtractive': {
+      bg: {r: 1.0, g: 1.0, b: 1.0, a: 1},
+      blend: {
+        color: {srcFactor: 'src-alpha', dstFactor: 'one', operation: 'reverse-subtract'},
+        alpha: {srcFactor: 'one', dstFactor: 'one', operation: 'add'},
+      },
+    },
+    'alpha': {
+      bg: {r: 0.0, g: 0.0, b: 0.0, a: 1},
+      blend: {
+        color: {srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add'},
+        alpha: {srcFactor: 'one', dstFactor: 'one', operation: 'add'},
+      },
+    },
+  };
+
   const params = {
     emitterRadius: 0.05,
     emitterCount: 2500.0,
     emitterSpeed: 0.5,
     emitterAccel: 0.2,
     emitterDamping: 0.2,
+    randomVelocity: 0.1,
+    randomAngle: 0.2,
     gravity: 0.0005,
     windStrength: 0.0005,
     dragCoeff: 0.01,
+    theme: Object.keys(themes)[0],
     brightness: 0.5,
   };
   const gui = new dat.GUI({name: 'wgpu-particles'});
-  gui.add(params, 'emitterRadius').min(0.001).max(0.5).step(0.001);
-  gui.add(params, 'emitterCount').step(1).min(1);
-  gui.add(params, 'emitterSpeed').step(0.01);
-  gui.add(params, 'emitterAccel').step(0.01).min(0).max(1);
-  gui.add(params, 'emitterDamping').step(0.01).min(0).max(1);
-  gui.add(params, 'gravity').step(0.0001);
-  gui.add(params, 'windStrength').step(0.0001);
-  gui.add(params, 'dragCoeff').step(0.01);
-  gui.add(params, 'brightness').min(0).max(1).step(0.01);
+  const emitter = gui.addFolder('emitter');
+  emitter.add(params, 'emitterRadius').min(0.001).max(0.5).step(0.001);
+  emitter.add(params, 'emitterCount').step(1).min(1);
+  emitter.add(params, 'emitterSpeed').step(0.01);
+  emitter.add(params, 'emitterAccel').step(0.01).min(0).max(1);
+  emitter.add(params, 'emitterDamping').step(0.01).min(0).max(1);
+  emitter.add(params, 'randomVelocity').step(0.01).min(0).max(1);
+  emitter.add(params, 'randomAngle').step(0.01).min(0).max(3.14);
+  const physics = gui.addFolder('physics');
+  physics.add(params, 'gravity').step(0.0001).min(0).max(0.01);
+  physics.add(params, 'windStrength').step(0.0001).min(0).max(0.01);
+  physics.add(params, 'dragCoeff').step(0.1).min(0).max(100);
+  const visuals = gui.addFolder('visuals');
+  const themeControl = visuals.add(params, 'theme').options(Object.keys(themes));
+  visuals.add(params, 'brightness').min(0).max(1).step(0.01);
 
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice();
@@ -108,6 +141,8 @@ const init = async () => {
       emitterCount: {type: 'f32'},
       emitterSpeed: {type: 'f32'},
       brightness: {type: 'f32'},
+      randomVelocity: {type: 'f32'},
+      randomAngle: {type: 'f32'},
     }, 
   );
 
@@ -275,51 +310,53 @@ const init = async () => {
   const triangleModule = device.createShaderModule({code: triangleShader});
 
   // this is akin to a WebGL shader program; i.e. configures shaders for several GPU shader stages
-  const renderPipeline = device.createRenderPipeline({
-    vertex: {
-      module: triangleModule,
-      entryPoint: 'vert_main',
-      buffers: [
-        // configure attributes derived from first vertex buffer
-        {
-          // instanced particles
-          arrayStride: nParticleProps * 4,
-          stepMode: 'instance',
-          attributes: [
-            {
-              // x, y
-              shaderLocation: 0,
-              offset: 0,
-              format: 'float32x2',
-            },
-            {
-              // dx, dy
-              shaderLocation: 1,
-              offset: 2 * 4,
-              format: 'float32x2',
-            },
-          ],
-        },
-      ],
-    },
-    fragment: {
-      module: triangleModule,
-      entryPoint: 'frag_main',
-      targets: [
-        {
-          format: textureFormat,
-          blend: {
-            color: {srcFactor: 'src-alpha', dstFactor: 'one', operation: 'add'},
-            alpha: {srcFactor: 'one', dstFactor: 'one', operation: 'add'},
+  let renderPipeline;
+  const createRenderPipeline = () => {
+    renderPipeline = device.createRenderPipeline({
+      vertex: {
+        module: triangleModule,
+        entryPoint: 'vert_main',
+        buffers: [
+          // configure attributes derived from first vertex buffer
+          {
+            // instanced particles
+            arrayStride: nParticleProps * 4,
+            stepMode: 'instance',
+            attributes: [
+              {
+                // x, y
+                shaderLocation: 0,
+                offset: 0,
+                format: 'float32x2',
+              },
+              {
+                // dx, dy
+                shaderLocation: 1,
+                offset: 2 * 4,
+                format: 'float32x2',
+              },
+            ],
           },
-        }
-      ],
-    },
-    primitive: {
-      // what geometric primitive(s) the vertices represent; same as GL
-      topology: 'triangle-list',
-    }
-  });
+        ],
+      },
+      fragment: {
+        module: triangleModule,
+        entryPoint: 'frag_main',
+        targets: [
+          {
+            format: textureFormat,
+            blend: themes[params.theme].blend,
+          }
+        ],
+      },
+      primitive: {
+        // what geometric primitive(s) the vertices represent; same as GL
+        topology: 'triangle-list',
+      }
+    });
+  };
+  createRenderPipeline();
+  themeControl.onChange(() => createRenderPipeline());
 
   const bgShader = /* wgsl */`
     ${uniformsChunk}
@@ -344,7 +381,7 @@ const init = async () => {
     fn frag_main(
       [[builtin(position)]] position: vec4<f32>,
     ) -> [[location(0)]] vec4<f32> {
-      return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+      return vec4<f32>(0.0, 0.0, 0.0, 0.0);
       // return vec4<f32>(windForce(position.xy / uniforms.resolution), 0.0, 1.0);
     }
   `;
@@ -398,18 +435,18 @@ const init = async () => {
         let dx = posB - posA;
         var angle = atan2(dx.y, dx.x);
         var len = length(dx);
-        angle = angle + randrange(f32(index) * 91.24111, -4.0 * len, 4.0 * len);
-        len = len * randrange(f32(index) * 15.15981, 0.1, 1.0);
-        let randomMag = 0.05 * len;
+        angle = angle + randrange(f32(index) * 91.24111, -uniforms.randomAngle, uniforms.randomAngle);
+        len = len * randrange(f32(index) * 15.15981, 0.2, 1.0);
         let f = counterDiff / uniforms.emitterCount;
         let discAngle = randrange(f32(index) * 0.71873, 0.0, 6.28);
         let discLen = randrange(f32(index) * 3.19888, 0.0, uniforms.emitterRadius);
         let disc = vec2<f32>(cos(discAngle) * discLen, sin(discAngle) * discLen);
         let newDx = vec2<f32>(cos(angle) * len, sin(angle) * len);
         pos = disc + posA * (1.0 - f) + posB * f;
-        vel = newDx * uniforms.emitterSpeed + vec2<f32>(
-          randrange(f32(index) * 2.135708, -randomMag, randomMag),
-          randrange(f32(index) * 1.198923, -randomMag, randomMag)
+        let randomMag = 1.0;
+        vel = newDx * uniforms.emitterSpeed * vec2<f32>(
+          randrange(f32(index) * 2.135708, 1.0 - uniforms.randomVelocity, 1.0),
+          randrange(f32(index) * 1.198923, 1.0 - uniforms.randomVelocity, 1.0)
         );
       }
 
@@ -520,6 +557,8 @@ const init = async () => {
       emitterCount: params.emitterCount,
       emitterSpeed: params.emitterSpeed,
       brightness: params.brightness,
+      randomVelocity: params.randomVelocity,
+      randomAngle: params.randomAngle,
     });
     emitterPx = emitterX;
     emitterPy = emitterY;
@@ -558,7 +597,8 @@ const init = async () => {
             // this is either 'load' or a color. If 'load', load the existing texture data into the render pass.
             // If a color, clear the texture to this color instead. This is preferred, because 'load' is expensive on some hardware.
             // This is like glClearColor.
-            loadValue: 'load',
+            // loadValue: 'load',
+            loadValue: themes[params.theme].bg,
             storeOp: 'store', // either 'store' or 'discard' (why?) the output
           }
         ]
