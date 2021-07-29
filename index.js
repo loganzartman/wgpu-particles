@@ -417,7 +417,10 @@ const init = async () => {
 
     [[stage(compute), workgroup_size(1)]]
     fn main([[builtin(global_invocation_id)]] globalInvocationId : vec3<u32>) {
-      let index = globalInvocationId.x;
+      let index = globalInvocationId.x * globalInvocationId.y;
+      if (index >= uniforms.nParticles) {
+        return;
+      }
       // physics integration
       var pos = particles.particles[index].pos;
       var vel = particles.particles[index].vel;
@@ -566,7 +569,7 @@ const init = async () => {
     const computeEncoder = encoder.beginComputePass();
     computeEncoder.setPipeline(updateParticlesPipeline);
     computeEncoder.setBindGroup(0, updateParticlesBindGroup);
-    computeEncoder.dispatch(nParticles);
+    computeEncoder.dispatch(Math.ceil(nParticles / 1024),  1024);
     computeEncoder.endPass();
 
     // the texture we should render to for this frame (i.e. not the one currently being displayed)
