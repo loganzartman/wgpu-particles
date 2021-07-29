@@ -40,6 +40,7 @@ const init = async () => {
     emitterRadius: 0.05,
     emitterCount: 2500.0,
     emitterSpeed: 0.5,
+    speed: 100.0,
     emitterAccel: 0.2,
     emitterDamping: 0.2,
     randomVelocity: 0.1,
@@ -55,6 +56,7 @@ const init = async () => {
   emitter.add(params, 'emitterRadius').min(0.001).max(0.5).step(0.001);
   emitter.add(params, 'emitterCount').step(1).min(1);
   emitter.add(params, 'emitterSpeed').step(0.01);
+  emitter.add(params, 'speed').min(1).max(10000);
   emitter.add(params, 'emitterAccel').step(0.01).min(0).max(1);
   emitter.add(params, 'emitterDamping').step(0.01).min(0).max(1);
   emitter.add(params, 'randomVelocity').step(0.01).min(0).max(1);
@@ -233,7 +235,7 @@ const init = async () => {
   `;
 
   // create initial data for particles
-  const nParticles = 1000000;
+  const nParticles = 2000000;
   const nParticleProps = 4;
   const initialParticleData = new Float32Array(nParticles * nParticleProps);
   for (let i = 0; i < nParticles; ++i) {
@@ -522,8 +524,8 @@ const init = async () => {
 
   // do the host-side physics for the emitter 
   const physicsStep = () => {
-    let targetX = Math.cos(Date.now() / 100.0) * width * 0.2 + width * 0.5;
-    let targetY = Math.sin(Date.now() / 100.0) * height * 0.2 + height * 0.5;
+    let targetX = Math.cos(Date.now() / params.speed) * width * 0.2 + width * 0.5;
+    let targetY = Math.sin(Date.now() / params.speed) * height * 0.2 + height * 0.5;
     if (mouseDown) {
       targetX = mouseX;
       targetY = mouseY;
