@@ -418,7 +418,7 @@ const init = async () => {
     [[stage(compute), workgroup_size(1)]]
     fn main([[builtin(global_invocation_id)]] globalInvocationId : vec3<u32>) {
       let index = globalInvocationId.x * globalInvocationId.y;
-      if (index >= uniforms.nParticles) {
+      if (index >= u32(uniforms.nParticles)) {
         return;
       }
       // physics integration
