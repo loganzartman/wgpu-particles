@@ -235,7 +235,7 @@ const init = async () => {
   `;
 
   // create initial data for particles
-  const nParticles = 2000000;
+  const nParticles = 1000000;
   const nParticleProps = 4;
   const initialParticleData = new Float32Array(nParticles * nParticleProps);
   for (let i = 0; i < nParticles; ++i) {
